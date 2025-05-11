@@ -1,4 +1,3 @@
-use crate::core::event::{self, Event};
 use crate::core::layout::{self, Layout};
 use crate::core::mouse;
 use crate::core::overlay;
@@ -6,8 +5,8 @@ use crate::core::renderer;
 use crate::core::widget;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::{
-    self, Clipboard, Element, Length, Point, Rectangle, Shell, Size, Vector,
-    Widget,
+    self, Clipboard, Element, Event, Length, Point, Rectangle, Shell, Size,
+    Vector, Widget,
 };
 use crate::horizontal_space;
 use crate::runtime::overlay::Nested;
@@ -21,6 +20,7 @@ use std::ops::Deref;
 ///
 /// A [`Responsive`] widget will always try to fill all the available space of
 /// its parent.
+#[cfg(feature = "lazy")]
 #[allow(missing_debug_implementations)]
 pub struct Responsive<
     'a,
@@ -50,7 +50,8 @@ where
             content: RefCell::new(Content {
                 size: Size::ZERO,
                 layout: None,
-                element: Element::new(horizontal_space(0)),
+                is_layout_invalid: true,
+                element: Element::new(horizontal_space().width(0)),
             }),
         }
     }
@@ -59,6 +60,7 @@ where
 struct Content<'a, Message, Theme, Renderer> {
     size: Size,
     layout: Option<layout::Node>,
+    is_layout_invalid: bool,
     element: Element<'a, Message, Theme, Renderer>,
 }
 
@@ -67,12 +69,13 @@ where
     Renderer: core::Renderer,
 {
     fn layout(&mut self, tree: &mut Tree, renderer: &Renderer) {
-        if self.layout.is_none() {
+        if self.layout.is_none() || self.is_layout_invalid {
             self.layout = Some(self.element.as_widget().layout(
                 tree,
                 renderer,
                 &layout::Limits::new(Size::ZERO, self.size),
             ));
+            self.is_layout_invalid = false;
         }
     }
 
@@ -82,15 +85,21 @@ where
         new_size: Size,
         view: &dyn Fn(Size) -> Element<'a, Message, Theme, Renderer>,
     ) {
-        if self.size == new_size {
-            return;
+        if self.size != new_size {
+            self.element = view(new_size);
+            self.size = new_size;
+            self.layout = None;
+
+            tree.diff(&self.element);
+        } else {
+            let is_tree_empty =
+                tree.tag == tree::Tag::stateless() && tree.children.is_empty();
+
+            if is_tree_empty {
+                self.layout = None;
+                tree.diff(&self.element);
+            }
         }
-
-        self.element = view(new_size);
-        self.size = new_size;
-        self.layout = None;
-
-        tree.diff(&self.element);
     }
 
     fn resolve<R, T>(
@@ -125,8 +134,8 @@ struct State {
     tree: RefCell<Tree>,
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Responsive<'a, Message, Theme, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Responsive<'_, Message, Theme, Renderer>
 where
     Renderer: core::Renderer,
 {
@@ -161,7 +170,7 @@ where
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn widget::Operation<Message>,
+        operation: &mut dyn widget::Operation,
     ) {
         let state = tree.state.downcast_mut::<State>();
         let mut content = self.content.borrow_mut();
@@ -179,30 +188,30 @@ where
         );
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         let state = tree.state.downcast_mut::<State>();
         let mut content = self.content.borrow_mut();
 
         let mut local_messages = vec![];
         let mut local_shell = Shell::new(&mut local_messages);
 
-        let status = content.resolve(
+        content.resolve(
             &mut state.tree.borrow_mut(),
             renderer,
             layout,
             &self.view,
             |tree, renderer, layout, element| {
-                element.as_widget_mut().on_event(
+                element.as_widget_mut().update(
                     tree,
                     event,
                     layout,
@@ -211,7 +220,7 @@ where
                     clipboard,
                     &mut local_shell,
                     viewport,
-                )
+                );
             },
         );
 
@@ -220,8 +229,6 @@ where
         }
 
         shell.merge(local_shell, std::convert::identity);
-
-        status
     }
 
     fn draw(
@@ -277,8 +284,10 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
         use std::ops::DerefMut;
 
@@ -299,6 +308,7 @@ where
                 let Content {
                     element,
                     layout: content_layout_node,
+                    is_layout_invalid,
                     ..
                 } = content.deref_mut();
 
@@ -307,19 +317,28 @@ where
                     content_layout_node.as_ref().unwrap(),
                 );
 
-                element
-                    .as_widget_mut()
-                    .overlay(tree, content_layout, renderer)
-                    .map(|overlay| RefCell::new(Nested::new(overlay)))
+                (
+                    element
+                        .as_widget_mut()
+                        .overlay(
+                            tree,
+                            content_layout,
+                            renderer,
+                            viewport,
+                            translation,
+                        )
+                        .map(|overlay| RefCell::new(Nested::new(overlay))),
+                    is_layout_invalid,
+                )
             },
         }
         .build();
 
-        let has_overlay =
-            overlay.with_overlay_maybe(|overlay| overlay.position());
-
-        has_overlay
-            .map(|position| overlay::Element::new(position, Box::new(overlay)))
+        if overlay.with_overlay(|(overlay, _layout)| overlay.is_some()) {
+            Some(overlay::Element::new(Box::new(overlay)))
+        } else {
+            None
+        }
     }
 }
 
@@ -344,17 +363,18 @@ struct Overlay<'a, 'b, Message, Theme, Renderer> {
 
     #[borrows(mut content, mut tree)]
     #[not_covariant]
-    overlay: Option<RefCell<Nested<'this, Message, Theme, Renderer>>>,
+    overlay: (
+        Option<RefCell<Nested<'this, Message, Theme, Renderer>>>,
+        &'this mut bool,
+    ),
 }
 
-impl<'a, 'b, Message, Theme, Renderer>
-    Overlay<'a, 'b, Message, Theme, Renderer>
-{
+impl<Message, Theme, Renderer> Overlay<'_, '_, Message, Theme, Renderer> {
     fn with_overlay_maybe<T>(
         &self,
         f: impl FnOnce(&mut Nested<'_, Message, Theme, Renderer>) -> T,
     ) -> Option<T> {
-        self.with_overlay(|overlay| {
+        self.with_overlay(|(overlay, _layout)| {
             overlay.as_ref().map(|nested| (f)(&mut nested.borrow_mut()))
         })
     }
@@ -363,29 +383,20 @@ impl<'a, 'b, Message, Theme, Renderer>
         &mut self,
         f: impl FnOnce(&mut Nested<'_, Message, Theme, Renderer>) -> T,
     ) -> Option<T> {
-        self.with_overlay_mut(|overlay| {
+        self.with_overlay_mut(|(overlay, _layout)| {
             overlay.as_mut().map(|nested| (f)(nested.get_mut()))
         })
     }
 }
 
-impl<'a, 'b, Message, Theme, Renderer>
-    overlay::Overlay<Message, Theme, Renderer>
-    for Overlay<'a, 'b, Message, Theme, Renderer>
+impl<Message, Theme, Renderer> overlay::Overlay<Message, Theme, Renderer>
+    for Overlay<'_, '_, Message, Theme, Renderer>
 where
     Renderer: core::Renderer,
 {
-    fn layout(
-        &mut self,
-        renderer: &Renderer,
-        bounds: Size,
-        position: Point,
-        translation: Vector,
-    ) -> layout::Node {
-        self.with_overlay_maybe(|overlay| {
-            overlay.layout(renderer, bounds, position, translation)
-        })
-        .unwrap_or_default()
+    fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
+        self.with_overlay_maybe(|overlay| overlay.layout(renderer, bounds))
+            .unwrap_or_default()
     }
 
     fn draw(
@@ -405,39 +416,46 @@ where
         &self,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
-        viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
         self.with_overlay_maybe(|overlay| {
-            overlay.mouse_interaction(layout, cursor, viewport, renderer)
+            overlay.mouse_interaction(layout, cursor, renderer)
         })
         .unwrap_or_default()
     }
 
-    fn on_event(
+    fn update(
         &mut self,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
-    ) -> event::Status {
-        self.with_overlay_mut_maybe(|overlay| {
-            overlay.on_event(event, layout, cursor, renderer, clipboard, shell)
-        })
-        .unwrap_or(event::Status::Ignored)
+    ) {
+        let mut is_layout_invalid = false;
+
+        let _ = self.with_overlay_mut_maybe(|overlay| {
+            overlay.update(event, layout, cursor, renderer, clipboard, shell);
+
+            is_layout_invalid = shell.is_layout_invalid();
+        });
+
+        if is_layout_invalid {
+            self.with_overlay_mut(|(_overlay, layout)| {
+                **layout = true;
+            });
+        }
     }
 
-    fn is_over(
-        &self,
+    fn operate(
+        &mut self,
         layout: Layout<'_>,
         renderer: &Renderer,
-        cursor_position: Point,
-    ) -> bool {
-        self.with_overlay_maybe(|overlay| {
-            overlay.is_over(layout, renderer, cursor_position)
-        })
-        .unwrap_or_default()
+        operation: &mut dyn widget::Operation,
+    ) {
+        let _ = self.with_overlay_mut_maybe(|overlay| {
+            overlay.operate(layout, renderer, operation);
+        });
     }
 }

@@ -1,6 +1,6 @@
 use crate::core::alignment;
-use crate::core::text::{LineHeight, Shaping};
-use crate::core::{Color, Font, Pixels, Point, Rectangle, Size};
+use crate::core::text::{Alignment, Shaping};
+use crate::core::{Color, Font, Pixels, Point, Rectangle, Transformation};
 use crate::graphics::text::cache::{self, Cache};
 use crate::graphics::text::editor;
 use crate::graphics::text::font_system;
@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::hash_map;
 
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct Pipeline {
     glyph_cache: GlyphCache,
     cache: RefCell<Cache>,
@@ -25,6 +25,8 @@ impl Pipeline {
         }
     }
 
+    // TODO: Shared engine
+    #[allow(dead_code)]
     pub fn load_font(&mut self, bytes: Cow<'static, [u8]>) {
         font_system()
             .write()
@@ -39,12 +41,10 @@ impl Pipeline {
         paragraph: &paragraph::Weak,
         position: Point,
         color: Color,
-        scale_factor: f32,
         pixels: &mut tiny_skia::PixmapMut<'_>,
         clip_mask: Option<&tiny_skia::Mask>,
+        transformation: Transformation,
     ) {
-        use crate::core::text::Paragraph as _;
-
         let Some(paragraph) = paragraph.upgrade() else {
             return;
         };
@@ -55,13 +55,11 @@ impl Pipeline {
             font_system.raw(),
             &mut self.glyph_cache,
             paragraph.buffer(),
-            Rectangle::new(position, paragraph.min_bounds()),
+            position,
             color,
-            paragraph.horizontal_alignment(),
-            paragraph.vertical_alignment(),
-            scale_factor,
             pixels,
             clip_mask,
+            transformation,
         );
     }
 
@@ -70,12 +68,10 @@ impl Pipeline {
         editor: &editor::Weak,
         position: Point,
         color: Color,
-        scale_factor: f32,
         pixels: &mut tiny_skia::PixmapMut<'_>,
         clip_mask: Option<&tiny_skia::Mask>,
+        transformation: Transformation,
     ) {
-        use crate::core::text::Editor as _;
-
         let Some(editor) = editor.upgrade() else {
             return;
         };
@@ -86,13 +82,11 @@ impl Pipeline {
             font_system.raw(),
             &mut self.glyph_cache,
             editor.buffer(),
-            Rectangle::new(position, editor.bounds()),
+            position,
             color,
-            alignment::Horizontal::Left,
-            alignment::Vertical::Top,
-            scale_factor,
             pixels,
             clip_mask,
+            transformation,
         );
     }
 
@@ -102,16 +96,16 @@ impl Pipeline {
         bounds: Rectangle,
         color: Color,
         size: Pixels,
-        line_height: LineHeight,
+        line_height: Pixels,
         font: Font,
-        horizontal_alignment: alignment::Horizontal,
-        vertical_alignment: alignment::Vertical,
+        align_x: Alignment,
+        align_y: alignment::Vertical,
         shaping: Shaping,
-        scale_factor: f32,
         pixels: &mut tiny_skia::PixmapMut<'_>,
         clip_mask: Option<&tiny_skia::Mask>,
+        transformation: Transformation,
     ) {
-        let line_height = f32::from(line_height.to_absolute(size));
+        let line_height = f32::from(line_height);
 
         let mut font_system = font_system().write().expect("Write font system");
         let font_system = font_system.raw();
@@ -123,6 +117,7 @@ impl Pipeline {
             size: size.into(),
             line_height,
             shaping,
+            align_x,
         };
 
         let (_, entry) = self.cache.get_mut().allocate(font_system, key);
@@ -130,21 +125,29 @@ impl Pipeline {
         let width = entry.min_bounds.width;
         let height = entry.min_bounds.height;
 
+        let x = match align_x {
+            Alignment::Default | Alignment::Left | Alignment::Justified => {
+                bounds.x
+            }
+            Alignment::Center => bounds.x - width / 2.0,
+            Alignment::Right => bounds.x - width,
+        };
+
+        let y = match align_y {
+            alignment::Vertical::Top => bounds.y,
+            alignment::Vertical::Center => bounds.y - height / 2.0,
+            alignment::Vertical::Bottom => bounds.y - height,
+        };
+
         draw(
             font_system,
             &mut self.glyph_cache,
             &entry.buffer,
-            Rectangle {
-                width,
-                height,
-                ..bounds
-            },
+            Point::new(x, y),
             color,
-            horizontal_alignment,
-            vertical_alignment,
-            scale_factor,
             pixels,
             clip_mask,
+            transformation,
         );
     }
 
@@ -153,25 +156,21 @@ impl Pipeline {
         buffer: &cosmic_text::Buffer,
         position: Point,
         color: Color,
-        scale_factor: f32,
         pixels: &mut tiny_skia::PixmapMut<'_>,
         clip_mask: Option<&tiny_skia::Mask>,
+        transformation: Transformation,
     ) {
         let mut font_system = font_system().write().expect("Write font system");
-
-        let (width, height) = buffer.size();
 
         draw(
             font_system.raw(),
             &mut self.glyph_cache,
             buffer,
-            Rectangle::new(position, Size::new(width, height)),
+            position,
             color,
-            alignment::Horizontal::Left,
-            alignment::Vertical::Top,
-            scale_factor,
             pixels,
             clip_mask,
+            transformation,
         );
     }
 
@@ -185,33 +184,22 @@ fn draw(
     font_system: &mut cosmic_text::FontSystem,
     glyph_cache: &mut GlyphCache,
     buffer: &cosmic_text::Buffer,
-    bounds: Rectangle,
+    position: Point,
     color: Color,
-    horizontal_alignment: alignment::Horizontal,
-    vertical_alignment: alignment::Vertical,
-    scale_factor: f32,
     pixels: &mut tiny_skia::PixmapMut<'_>,
     clip_mask: Option<&tiny_skia::Mask>,
+    transformation: Transformation,
 ) {
-    let bounds = bounds * scale_factor;
-
-    let x = match horizontal_alignment {
-        alignment::Horizontal::Left => bounds.x,
-        alignment::Horizontal::Center => bounds.x - bounds.width / 2.0,
-        alignment::Horizontal::Right => bounds.x - bounds.width,
-    };
-
-    let y = match vertical_alignment {
-        alignment::Vertical::Top => bounds.y,
-        alignment::Vertical::Center => bounds.y - bounds.height / 2.0,
-        alignment::Vertical::Bottom => bounds.y - bounds.height,
-    };
+    let position = position * transformation;
 
     let mut swash = cosmic_text::SwashCache::new();
 
     for run in buffer.layout_runs() {
         for glyph in run.glyphs {
-            let physical_glyph = glyph.physical((x, y), scale_factor);
+            let physical_glyph = glyph.physical(
+                (position.x, position.y),
+                transformation.scale_factor(),
+            );
 
             if let Some((buffer, placement)) = glyph_cache.allocate(
                 physical_glyph.cache_key,
@@ -226,12 +214,22 @@ fn draw(
                 )
                 .expect("Create glyph pixel map");
 
+                let opacity = color.a
+                    * glyph
+                        .color_opt
+                        .map(|c| c.a() as f32 / 255.0)
+                        .unwrap_or(1.0);
+
                 pixels.draw_pixmap(
                     physical_glyph.x + placement.left,
                     physical_glyph.y - placement.top
-                        + (run.line_y * scale_factor).round() as i32,
+                        + (run.line_y * transformation.scale_factor()).round()
+                            as i32,
                     pixmap,
-                    &tiny_skia::PixmapPaint::default(),
+                    &tiny_skia::PixmapPaint {
+                        opacity,
+                        ..tiny_skia::PixmapPaint::default()
+                    },
                     tiny_skia::Transform::identity(),
                     clip_mask,
                 );
@@ -258,6 +256,7 @@ struct GlyphCache {
 
 impl GlyphCache {
     const TRIM_INTERVAL: usize = 300;
+    const CAPACITY_LIMIT: usize = 16 * 1024;
 
     fn new() -> Self {
         GlyphCache::default()
@@ -344,11 +343,16 @@ impl GlyphCache {
     }
 
     pub fn trim(&mut self) {
-        if self.trim_count > Self::TRIM_INTERVAL {
+        if self.trim_count > Self::TRIM_INTERVAL
+            || self.recently_used.len() >= Self::CAPACITY_LIMIT
+        {
             self.entries
                 .retain(|key, _| self.recently_used.contains(key));
 
             self.recently_used.clear();
+
+            self.entries.shrink_to(Self::CAPACITY_LIMIT);
+            self.recently_used.shrink_to(Self::CAPACITY_LIMIT);
 
             self.trim_count = 0;
         } else {

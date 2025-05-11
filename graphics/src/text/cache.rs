@@ -2,21 +2,17 @@
 use crate::core::{Font, Size};
 use crate::text;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use std::collections::hash_map;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 
 /// A store of recently used sections of text.
-#[allow(missing_debug_implementations)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Cache {
     entries: FxHashMap<KeyHash, Entry>,
     aliases: FxHashMap<KeyHash, KeyHash>,
     recently_used: FxHashSet<KeyHash>,
-    hasher: HashBuilder,
 }
-
-type HashBuilder = xxhash_rust::xxh3::Xxh3Builder;
 
 impl Cache {
     /// Creates a new empty [`Cache`].
@@ -35,7 +31,7 @@ impl Cache {
         font_system: &mut cosmic_text::FontSystem,
         key: Key<'_>,
     ) -> (KeyHash, &mut Entry) {
-        let hash = key.hash(self.hasher.build_hasher());
+        let hash = key.hash(FxHasher::default());
 
         if let Some(hash) = self.aliases.get(&hash) {
             let _ = self.recently_used.insert(*hash);
@@ -52,17 +48,18 @@ impl Cache {
 
             buffer.set_size(
                 font_system,
-                key.bounds.width,
-                key.bounds.height.max(key.line_height),
+                Some(key.bounds.width),
+                Some(key.bounds.height.max(key.line_height)),
             );
             buffer.set_text(
                 font_system,
                 key.content,
-                text::to_attributes(key.font),
+                &text::to_attributes(key.font),
                 text::to_shaping(key.shaping),
             );
 
-            let bounds = text::measure(&buffer);
+            let bounds = text::align(&mut buffer, font_system, key.align_x);
+
             let _ = entry.insert(Entry {
                 buffer,
                 min_bounds: bounds,
@@ -77,7 +74,7 @@ impl Cache {
             ] {
                 if key.bounds != bounds {
                     let _ = self.aliases.insert(
-                        Key { bounds, ..key }.hash(self.hasher.build_hasher()),
+                        Key { bounds, ..key }.hash(FxHasher::default()),
                         hash,
                     );
                 }
@@ -118,6 +115,8 @@ pub struct Key<'a> {
     pub bounds: Size,
     /// The shaping strategy of the text.
     pub shaping: text::Shaping,
+    /// The alignment of the text.
+    pub align_x: text::Alignment,
 }
 
 impl Key<'_> {
@@ -129,6 +128,7 @@ impl Key<'_> {
         self.bounds.width.to_bits().hash(&mut hasher);
         self.bounds.height.to_bits().hash(&mut hasher);
         self.shaping.hash(&mut hasher);
+        self.align_x.hash(&mut hasher);
 
         hasher.finish()
     }
@@ -138,7 +138,7 @@ impl Key<'_> {
 pub type KeyHash = u64;
 
 /// A cache entry.
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct Entry {
     /// The buffer of text, ready for drawing.
     pub buffer: cosmic_text::Buffer,

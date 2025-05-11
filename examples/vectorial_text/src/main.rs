@@ -1,20 +1,21 @@
-use iced::alignment::{self, Alignment};
+use iced::alignment;
 use iced::mouse;
 use iced::widget::{
     canvas, checkbox, column, horizontal_space, row, slider, text,
 };
-use iced::{
-    Element, Length, Point, Rectangle, Renderer, Sandbox, Settings, Theme,
-    Vector,
-};
+use iced::{Center, Element, Fill, Point, Rectangle, Renderer, Theme, Vector};
 
 pub fn main() -> iced::Result {
-    VectorialText::run(Settings {
-        antialiasing: true,
-        ..Settings::default()
-    })
+    iced::application(
+        VectorialText::default,
+        VectorialText::update,
+        VectorialText::view,
+    )
+    .theme(|_| Theme::Dark)
+    .run()
 }
 
+#[derive(Default)]
 struct VectorialText {
     state: State,
 }
@@ -27,19 +28,7 @@ enum Message {
     ToggleJapanese(bool),
 }
 
-impl Sandbox for VectorialText {
-    type Message = Message;
-
-    fn new() -> Self {
-        Self {
-            state: State::new(),
-        }
-    }
-
-    fn title(&self) -> String {
-        String::from("Vectorial Text - Iced")
-    }
-
+impl VectorialText {
     fn update(&mut self, message: Message) {
         match message {
             Message::SizeChanged(size) => {
@@ -62,24 +51,17 @@ impl Sandbox for VectorialText {
     fn view(&self) -> Element<Message> {
         let slider_with_label = |label, range, value, message: fn(f32) -> _| {
             column![
-                row![
-                    text(label),
-                    horizontal_space(Length::Fill),
-                    text(format!("{:.2}", value))
-                ],
+                row![text(label), horizontal_space(), text!("{:.2}", value)],
                 slider(range, value, message).step(0.01)
             ]
             .spacing(2)
         };
 
         column![
-            canvas(&self.state).width(Length::Fill).height(Length::Fill),
+            canvas(&self.state).width(Fill).height(Fill),
             column![
-                checkbox(
-                    "Use Japanese",
-                    self.state.use_japanese,
-                    Message::ToggleJapanese
-                ),
+                checkbox("Use Japanese", self.state.use_japanese,)
+                    .on_toggle(Message::ToggleJapanese),
                 row![
                     slider_with_label(
                         "Size",
@@ -102,16 +84,12 @@ impl Sandbox for VectorialText {
                 ]
                 .spacing(20),
             ]
-            .align_items(Alignment::Center)
+            .align_x(Center)
             .spacing(10)
         ]
         .spacing(10)
         .padding(20)
         .into()
-    }
-
-    fn theme(&self) -> Theme {
-        Theme::Dark
     }
 }
 
@@ -163,13 +141,19 @@ impl<Message> canvas::Program<Message> for State {
                 } else {
                     "Vectorial Text! 🎉"
                 }),
-                horizontal_alignment: alignment::Horizontal::Center,
-                vertical_alignment: alignment::Vertical::Center,
+                align_x: text::Alignment::Center,
+                align_y: alignment::Vertical::Center,
                 shaping: text::Shaping::Advanced,
                 ..canvas::Text::default()
             });
         });
 
         vec![geometry]
+    }
+}
+
+impl Default for State {
+    fn default() -> Self {
+        State::new()
     }
 }

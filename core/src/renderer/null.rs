@@ -1,32 +1,20 @@
 use crate::alignment;
+use crate::image::{self, Image};
 use crate::renderer::{self, Renderer};
+use crate::svg;
 use crate::text::{self, Text};
-use crate::{Background, Color, Font, Pixels, Point, Rectangle, Size, Vector};
+use crate::{
+    Background, Color, Font, Pixels, Point, Rectangle, Size, Transformation,
+};
 
-use std::borrow::Cow;
+impl Renderer for () {
+    fn start_layer(&mut self, _bounds: Rectangle) {}
 
-/// A renderer that does nothing.
-///
-/// It can be useful if you are writing tests!
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Null;
+    fn end_layer(&mut self) {}
 
-impl Null {
-    /// Creates a new [`Null`] renderer.
-    pub fn new() -> Null {
-        Null
-    }
-}
+    fn start_transformation(&mut self, _transformation: Transformation) {}
 
-impl Renderer for Null {
-    fn with_layer(&mut self, _bounds: Rectangle, _f: impl FnOnce(&mut Self)) {}
-
-    fn with_translation(
-        &mut self,
-        _translation: Vector,
-        _f: impl FnOnce(&mut Self),
-    ) {
-    }
+    fn end_transformation(&mut self) {}
 
     fn clear(&mut self) {}
 
@@ -38,11 +26,12 @@ impl Renderer for Null {
     }
 }
 
-impl text::Renderer for Null {
+impl text::Renderer for () {
     type Font = Font;
     type Paragraph = ();
     type Editor = ();
 
+    const MONOSPACE_FONT: Font = Font::MONOSPACE;
     const ICON_FONT: Font = Font::DEFAULT;
     const CHECKMARK_ICON: char = '0';
     const ARROW_DOWN_ICON: char = '0';
@@ -54,8 +43,6 @@ impl text::Renderer for Null {
     fn default_size(&self) -> Pixels {
         Pixels(16.0)
     }
-
-    fn load_font(&mut self, _font: Cow<'static, [u8]>) {}
 
     fn fill_paragraph(
         &mut self,
@@ -77,7 +64,7 @@ impl text::Renderer for Null {
 
     fn fill_text(
         &mut self,
-        _paragraph: Text<'_, Self::Font>,
+        _paragraph: Text,
         _position: Point,
         _color: Color,
         _clip_bounds: Rectangle,
@@ -88,24 +75,53 @@ impl text::Renderer for Null {
 impl text::Paragraph for () {
     type Font = Font;
 
-    fn with_text(_text: Text<'_, Self::Font>) -> Self {}
+    fn with_text(_text: Text<&str>) -> Self {}
+
+    fn with_spans<Link>(
+        _text: Text<&[text::Span<'_, Link, Self::Font>], Self::Font>,
+    ) -> Self {
+    }
 
     fn resize(&mut self, _new_bounds: Size) {}
 
-    fn compare(&self, _text: Text<'_, Self::Font>) -> text::Difference {
+    fn compare(&self, _text: Text<()>) -> text::Difference {
         text::Difference::None
     }
 
-    fn horizontal_alignment(&self) -> alignment::Horizontal {
-        alignment::Horizontal::Left
+    fn size(&self) -> Pixels {
+        Pixels(16.0)
     }
 
-    fn vertical_alignment(&self) -> alignment::Vertical {
+    fn font(&self) -> Font {
+        Font::DEFAULT
+    }
+
+    fn line_height(&self) -> text::LineHeight {
+        text::LineHeight::default()
+    }
+
+    fn align_x(&self) -> text::Alignment {
+        text::Alignment::Default
+    }
+
+    fn align_y(&self) -> alignment::Vertical {
         alignment::Vertical::Top
+    }
+
+    fn wrapping(&self) -> text::Wrapping {
+        text::Wrapping::default()
+    }
+
+    fn shaping(&self) -> text::Shaping {
+        text::Shaping::default()
     }
 
     fn grapheme_position(&self, _line: usize, _index: usize) -> Option<Point> {
         None
+    }
+
+    fn bounds(&self) -> Size {
+        Size::ZERO
     }
 
     fn min_bounds(&self) -> Size {
@@ -115,12 +131,24 @@ impl text::Paragraph for () {
     fn hit_test(&self, _point: Point) -> Option<text::Hit> {
         None
     }
+
+    fn hit_span(&self, _point: Point) -> Option<usize> {
+        None
+    }
+
+    fn span_bounds(&self, _index: usize) -> Vec<Rectangle> {
+        vec![]
+    }
 }
 
 impl text::Editor for () {
     type Font = Font;
 
     fn with_text(_text: &str) -> Self {}
+
+    fn is_empty(&self) -> bool {
+        true
+    }
 
     fn cursor(&self) -> text::editor::Cursor {
         text::editor::Cursor::Caret(Point::ORIGIN)
@@ -134,7 +162,7 @@ impl text::Editor for () {
         None
     }
 
-    fn line(&self, _index: usize) -> Option<&str> {
+    fn line(&self, _index: usize) -> Option<text::editor::Line<'_>> {
         None
     }
 
@@ -148,12 +176,17 @@ impl text::Editor for () {
         Size::ZERO
     }
 
+    fn min_bounds(&self) -> Size {
+        Size::ZERO
+    }
+
     fn update(
         &mut self,
         _new_bounds: Size,
         _new_font: Self::Font,
         _new_size: Pixels,
         _new_line_height: text::LineHeight,
+        _new_wrapping: text::Wrapping,
         _new_highlighter: &mut impl text::Highlighter,
     ) {
     }
@@ -167,4 +200,22 @@ impl text::Editor for () {
         ) -> text::highlighter::Format<Self::Font>,
     ) {
     }
+}
+
+impl image::Renderer for () {
+    type Handle = image::Handle;
+
+    fn measure_image(&self, _handle: &Self::Handle) -> Size<u32> {
+        Size::default()
+    }
+
+    fn draw_image(&mut self, _image: Image, _bounds: Rectangle) {}
+}
+
+impl svg::Renderer for () {
+    fn measure_svg(&self, _handle: &svg::Handle) -> Size<u32> {
+        Size::default()
+    }
+
+    fn draw_svg(&mut self, _svg: svg::Svg, _bounds: Rectangle) {}
 }

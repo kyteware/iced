@@ -1,20 +1,22 @@
 use iced::event::{self, Event};
-use iced::executor;
 use iced::mouse;
-use iced::theme::{self, Theme};
 use iced::widget::{
     column, container, horizontal_space, row, scrollable, text, vertical_space,
 };
 use iced::window;
 use iced::{
-    Alignment, Application, Color, Command, Element, Font, Length, Point,
-    Rectangle, Settings, Subscription,
+    Center, Color, Element, Fill, Font, Point, Rectangle, Subscription, Task,
+    Theme,
 };
 
 pub fn main() -> iced::Result {
-    Example::run(Settings::default())
+    iced::application(Example::default, Example::update, Example::view)
+        .subscription(Example::subscription)
+        .theme(|_| Theme::Dark)
+        .run()
 }
 
+#[derive(Default)]
 struct Example {
     mouse_position: Option<Point>,
     outer_bounds: Option<Rectangle>,
@@ -25,56 +27,34 @@ struct Example {
 enum Message {
     MouseMoved(Point),
     WindowResized,
-    Scrolled(scrollable::Viewport),
+    Scrolled,
     OuterBoundsFetched(Option<Rectangle>),
     InnerBoundsFetched(Option<Rectangle>),
 }
 
-impl Application for Example {
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = ();
-    type Executor = executor::Default;
-
-    fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
-        (
-            Self {
-                mouse_position: None,
-                outer_bounds: None,
-                inner_bounds: None,
-            },
-            Command::none(),
-        )
-    }
-
-    fn title(&self) -> String {
-        String::from("Visible bounds - Iced")
-    }
-
-    fn update(&mut self, message: Message) -> Command<Message> {
+impl Example {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::MouseMoved(position) => {
                 self.mouse_position = Some(position);
 
-                Command::none()
+                Task::none()
             }
-            Message::Scrolled(_) | Message::WindowResized => {
-                Command::batch(vec![
-                    container::visible_bounds(OUTER_CONTAINER.clone())
-                        .map(Message::OuterBoundsFetched),
-                    container::visible_bounds(INNER_CONTAINER.clone())
-                        .map(Message::InnerBoundsFetched),
-                ])
-            }
+            Message::Scrolled | Message::WindowResized => Task::batch(vec![
+                container::visible_bounds(OUTER_CONTAINER.clone())
+                    .map(Message::OuterBoundsFetched),
+                container::visible_bounds(INNER_CONTAINER.clone())
+                    .map(Message::InnerBoundsFetched),
+            ]),
             Message::OuterBoundsFetched(outer_bounds) => {
                 self.outer_bounds = outer_bounds;
 
-                Command::none()
+                Task::none()
             }
             Message::InnerBoundsFetched(inner_bounds) => {
                 self.inner_bounds = inner_bounds;
 
-                Command::none()
+                Task::none()
             }
         }
     }
@@ -83,11 +63,14 @@ impl Application for Example {
         let data_row = |label, value, color| {
             row![
                 text(label),
-                horizontal_space(Length::Fill),
-                text(value).font(Font::MONOSPACE).size(14).style(color),
+                horizontal_space(),
+                text(value)
+                    .font(Font::MONOSPACE)
+                    .size(14)
+                    .color_maybe(color),
             ]
             .height(40)
-            .align_items(Alignment::Center)
+            .align_y(Center)
         };
 
         let view_bounds = |label, bounds: Option<Rectangle>| {
@@ -104,13 +87,12 @@ impl Application for Example {
                     })
                     .unwrap_or_default()
                 {
-                    Color {
+                    Some(Color {
                         g: 1.0,
                         ..Color::BLACK
-                    }
-                    .into()
+                    })
                 } else {
-                    theme::Text::Default
+                    None
                 },
             )
         };
@@ -122,39 +104,39 @@ impl Application for Example {
                     Some(Point { x, y }) => format!("({x}, {y})"),
                     None => "unknown".to_string(),
                 },
-                theme::Text::Default,
+                None,
             ),
             view_bounds("Outer container", self.outer_bounds),
             view_bounds("Inner container", self.inner_bounds),
             scrollable(
                 column![
                     text("Scroll me!"),
-                    vertical_space(400),
+                    vertical_space().height(400),
                     container(text("I am the outer container!"))
                         .id(OUTER_CONTAINER.clone())
                         .padding(40)
-                        .style(theme::Container::Box),
-                    vertical_space(400),
+                        .style(container::rounded_box),
+                    vertical_space().height(400),
                     scrollable(
                         column![
                             text("Scroll me!"),
-                            vertical_space(400),
+                            vertical_space().height(400),
                             container(text("I am the inner container!"))
                                 .id(INNER_CONTAINER.clone())
                                 .padding(40)
-                                .style(theme::Container::Box),
-                            vertical_space(400)
+                                .style(container::rounded_box),
+                            vertical_space().height(400),
                         ]
                         .padding(20)
                     )
-                    .on_scroll(Message::Scrolled)
-                    .width(Length::Fill)
+                    .on_scroll(|_| Message::Scrolled)
+                    .width(Fill)
                     .height(300),
                 ]
                 .padding(20)
             )
-            .on_scroll(Message::Scrolled)
-            .width(Length::Fill)
+            .on_scroll(|_| Message::Scrolled)
+            .width(Fill)
             .height(300),
         ]
         .spacing(10)
@@ -163,25 +145,21 @@ impl Application for Example {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        event::listen_with(|event, _| match event {
+        event::listen_with(|event, _status, _window| match event {
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 Some(Message::MouseMoved(position))
             }
-            Event::Window(_, window::Event::Resized { .. }) => {
+            Event::Window(window::Event::Resized { .. }) => {
                 Some(Message::WindowResized)
             }
             _ => None,
         })
     }
-
-    fn theme(&self) -> Theme {
-        Theme::Dark
-    }
 }
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
-static OUTER_CONTAINER: Lazy<container::Id> =
-    Lazy::new(|| container::Id::new("outer"));
-static INNER_CONTAINER: Lazy<container::Id> =
-    Lazy::new(|| container::Id::new("inner"));
+static OUTER_CONTAINER: LazyLock<container::Id> =
+    LazyLock::new(|| container::Id::new("outer"));
+static INNER_CONTAINER: LazyLock<container::Id> =
+    LazyLock::new(|| container::Id::new("inner"));

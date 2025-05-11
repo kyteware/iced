@@ -2,39 +2,37 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/9ab6923e943f784985e9ef9ca28b10278297225d/docs/logo.svg"
 )]
-#![forbid(unsafe_code, rust_2018_idioms)]
-#![deny(
-    missing_debug_implementations,
-    missing_docs,
-    unused_results,
-    rustdoc::broken_intra_doc_links
-)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub use iced_renderer as renderer;
 pub use iced_renderer::graphics;
 pub use iced_runtime as runtime;
 pub use iced_runtime::core;
-pub use iced_style as style;
 
+mod action;
 mod column;
 mod mouse_area;
-mod row;
+mod pin;
+mod space;
+mod stack;
 mod themer;
 
 pub mod button;
 pub mod checkbox;
 pub mod combo_box;
 pub mod container;
+pub mod float;
+pub mod grid;
 pub mod keyed;
 pub mod overlay;
 pub mod pane_grid;
 pub mod pick_list;
+pub mod pop;
 pub mod progress_bar;
 pub mod radio;
+pub mod row;
 pub mod rule;
 pub mod scrollable;
 pub mod slider;
-pub mod space;
 pub mod text;
 pub mod text_editor;
 pub mod text_input;
@@ -50,9 +48,6 @@ pub use helpers::*;
 mod lazy;
 
 #[cfg(feature = "lazy")]
-pub use crate::lazy::{Component, Lazy, Responsive};
-
-#[cfg(feature = "lazy")]
 pub use crate::lazy::helpers::*;
 
 #[doc(no_inline)]
@@ -66,11 +61,19 @@ pub use combo_box::ComboBox;
 #[doc(no_inline)]
 pub use container::Container;
 #[doc(no_inline)]
+pub use float::Float;
+#[doc(no_inline)]
+pub use grid::Grid;
+#[doc(no_inline)]
 pub use mouse_area::MouseArea;
 #[doc(no_inline)]
 pub use pane_grid::PaneGrid;
 #[doc(no_inline)]
 pub use pick_list::PickList;
+#[doc(no_inline)]
+pub use pin::Pin;
+#[doc(no_inline)]
+pub use pop::Pop;
 #[doc(no_inline)]
 pub use progress_bar::ProgressBar;
 #[doc(no_inline)]
@@ -85,6 +88,8 @@ pub use scrollable::Scrollable;
 pub use slider::Slider;
 #[doc(no_inline)]
 pub use space::Space;
+#[doc(no_inline)]
+pub use stack::Stack;
 #[doc(no_inline)]
 pub use text::Text;
 #[doc(no_inline)]
@@ -135,5 +140,9 @@ pub mod qr_code;
 #[doc(no_inline)]
 pub use qr_code::QRCode;
 
+#[cfg(feature = "markdown")]
+pub mod markdown;
+
+pub use crate::core::theme::{self, Theme};
+pub use action::Action;
 pub use renderer::Renderer;
-pub use style::theme::{self, Theme};

@@ -5,32 +5,22 @@ mod preset;
 use grid::Grid;
 use preset::Preset;
 
-use iced::executor;
-use iced::theme::{self, Theme};
-use iced::time;
+use iced::time::{self, milliseconds};
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, slider, text,
 };
-use iced::window;
-use iced::{
-    Alignment, Application, Command, Element, Length, Settings, Subscription,
-};
-use std::time::{Duration, Instant};
+use iced::{Center, Element, Fill, Function, Subscription, Task, Theme};
 
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
-    GameOfLife::run(Settings {
-        antialiasing: true,
-        window: window::Settings {
-            position: window::Position::Centered,
-            ..window::Settings::default()
-        },
-        ..Settings::default()
-    })
+    iced::application(GameOfLife::default, GameOfLife::update, GameOfLife::view)
+        .subscription(GameOfLife::subscription)
+        .theme(|_| Theme::Dark)
+        .centered()
+        .run()
 }
 
-#[derive(Default)]
 struct GameOfLife {
     grid: Grid,
     is_playing: bool,
@@ -42,8 +32,8 @@ struct GameOfLife {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Grid(grid::Message, usize),
-    Tick(Instant),
+    Grid(usize, grid::Message),
+    Tick,
     TogglePlayback,
     ToggleGrid(bool),
     Next,
@@ -52,34 +42,26 @@ enum Message {
     PresetPicked(Preset),
 }
 
-impl Application for GameOfLife {
-    type Message = Message;
-    type Theme = Theme;
-    type Executor = executor::Default;
-    type Flags = ();
-
-    fn new(_flags: ()) -> (Self, Command<Message>) {
-        (
-            Self {
-                speed: 5,
-                ..Self::default()
-            },
-            Command::none(),
-        )
+impl GameOfLife {
+    fn new() -> Self {
+        Self {
+            grid: Grid::default(),
+            is_playing: false,
+            queued_ticks: 0,
+            speed: 5,
+            next_speed: None,
+            version: 0,
+        }
     }
 
-    fn title(&self) -> String {
-        String::from("Game of Life - Iced")
-    }
-
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Grid(message, version) => {
+            Message::Grid(version, message) => {
                 if version == self.version {
                     self.grid.update(message);
                 }
             }
-            Message::Tick(_) | Message::Next => {
+            Message::Tick | Message::Next => {
                 self.queued_ticks = (self.queued_ticks + 1).min(self.speed);
 
                 if let Some(task) = self.grid.tick(self.queued_ticks) {
@@ -91,9 +73,7 @@ impl Application for GameOfLife {
 
                     let version = self.version;
 
-                    return Command::perform(task, move |message| {
-                        Message::Grid(message, version)
-                    });
+                    return Task::perform(task, Message::Grid.with(version));
                 }
             }
             Message::TogglePlayback => {
@@ -119,13 +99,13 @@ impl Application for GameOfLife {
             }
         }
 
-        Command::none()
+        Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
         if self.is_playing {
-            time::every(Duration::from_millis(1000 / self.speed as u64))
-                .map(Message::Tick)
+            time::every(milliseconds(1000 / self.speed as u64))
+                .map(|_| Message::Tick)
         } else {
             Subscription::none()
         }
@@ -142,21 +122,18 @@ impl Application for GameOfLife {
         );
 
         let content = column![
-            self.grid
-                .view()
-                .map(move |message| Message::Grid(message, version)),
+            self.grid.view().map(Message::Grid.with(version)),
             controls,
         ]
-        .height(Length::Fill);
+        .height(Fill);
 
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        container(content).width(Fill).height(Fill).into()
     }
+}
 
-    fn theme(&self) -> Theme {
-        Theme::Dark
+impl Default for GameOfLife {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -171,34 +148,32 @@ fn view_controls<'a>(
             .on_press(Message::TogglePlayback),
         button("Next")
             .on_press(Message::Next)
-            .style(theme::Button::Secondary),
+            .style(button::secondary),
     ]
     .spacing(10);
 
     let speed_controls = row![
         slider(1.0..=1000.0, speed as f32, Message::SpeedChanged),
-        text(format!("x{speed}")).size(16),
+        text!("x{speed}").size(16),
     ]
-    .align_items(Alignment::Center)
+    .align_y(Center)
     .spacing(10);
 
     row![
         playback_controls,
         speed_controls,
-        checkbox("Grid", is_grid_enabled, Message::ToggleGrid)
-            .size(16)
-            .spacing(5)
-            .text_size(16),
-        pick_list(preset::ALL, Some(preset), Message::PresetPicked)
-            .padding(8)
-            .text_size(16),
-        button("Clear")
-            .on_press(Message::Clear)
-            .style(theme::Button::Destructive),
+        checkbox("Grid", is_grid_enabled).on_toggle(Message::ToggleGrid),
+        row![
+            pick_list(preset::ALL, Some(preset), Message::PresetPicked),
+            button("Clear")
+                .on_press(Message::Clear)
+                .style(button::danger)
+        ]
+        .spacing(10)
     ]
     .padding(10)
     .spacing(20)
-    .align_items(Alignment::Center)
+    .align_y(Center)
     .into()
 }
 
@@ -206,17 +181,18 @@ mod grid {
     use crate::Preset;
     use iced::alignment;
     use iced::mouse;
+    use iced::time::{Duration, Instant};
     use iced::touch;
     use iced::widget::canvas;
-    use iced::widget::canvas::event::{self, Event};
-    use iced::widget::canvas::{Cache, Canvas, Frame, Geometry, Path, Text};
+    use iced::widget::canvas::{
+        Cache, Canvas, Event, Frame, Geometry, Path, Text,
+    };
+    use iced::widget::text;
     use iced::{
-        Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, Vector,
+        Color, Element, Fill, Point, Rectangle, Renderer, Size, Theme, Vector,
     };
     use rustc_hash::{FxHashMap, FxHashSet};
-    use std::future::Future;
     use std::ops::RangeInclusive;
-    use std::time::{Duration, Instant};
 
     pub struct Grid {
         state: State,
@@ -280,7 +256,7 @@ mod grid {
         pub fn tick(
             &mut self,
             amount: usize,
-        ) -> Option<impl Future<Output = Message>> {
+        ) -> Option<impl Future<Output = Message> + use<>> {
             let tick = self.state.tick(amount)?;
 
             self.last_queued_ticks = amount;
@@ -345,10 +321,7 @@ mod grid {
         }
 
         pub fn view(&self) -> Element<Message> {
-            Canvas::new(self)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+            Canvas::new(self).width(Fill).height(Fill).into()
         }
 
         pub fn clear(&mut self) {
@@ -398,17 +371,15 @@ mod grid {
         fn update(
             &self,
             interaction: &mut Interaction,
-            event: Event,
+            event: &Event,
             bounds: Rectangle,
             cursor: mouse::Cursor,
-        ) -> (event::Status, Option<Message>) {
+        ) -> Option<canvas::Action<Message>> {
             if let Event::Mouse(mouse::Event::ButtonReleased(_)) = event {
                 *interaction = Interaction::None;
             }
 
-            let Some(cursor_position) = cursor.position_in(bounds) else {
-                return (event::Status::Ignored, None);
-            };
+            let cursor_position = cursor.position_in(bounds)?;
 
             let cell = Cell::at(self.project(cursor_position, bounds.size()));
             let is_populated = self.state.contains(&cell);
@@ -431,7 +402,12 @@ mod grid {
                         populate.or(unpopulate)
                     };
 
-                    (event::Status::Captured, message)
+                    Some(
+                        message
+                            .map(canvas::Action::publish)
+                            .unwrap_or(canvas::Action::request_redraw())
+                            .and_capture(),
+                    )
                 }
                 Event::Mouse(mouse_event) => match mouse_event {
                     mouse::Event::ButtonPressed(button) => {
@@ -456,7 +432,12 @@ mod grid {
                             _ => None,
                         };
 
-                        (event::Status::Captured, message)
+                        Some(
+                            message
+                                .map(canvas::Action::publish)
+                                .unwrap_or(canvas::Action::request_redraw())
+                                .and_capture(),
+                        )
                     }
                     mouse::Event::CursorMoved { .. } => {
                         let message = match *interaction {
@@ -472,14 +453,16 @@ mod grid {
                             Interaction::None => None,
                         };
 
-                        let event_status = match interaction {
-                            Interaction::None => event::Status::Ignored,
-                            _ => event::Status::Captured,
-                        };
+                        let action = message
+                            .map(canvas::Action::publish)
+                            .unwrap_or(canvas::Action::request_redraw());
 
-                        (event_status, message)
+                        Some(match interaction {
+                            Interaction::None => action,
+                            _ => action.and_capture(),
+                        })
                     }
-                    mouse::Event::WheelScrolled { delta } => match delta {
+                    mouse::Event::WheelScrolled { delta } => match *delta {
                         mouse::ScrollDelta::Lines { y, .. }
                         | mouse::ScrollDelta::Pixels { y, .. } => {
                             if y < 0.0 && self.scaling > Self::MIN_SCALING
@@ -514,18 +497,21 @@ mod grid {
                                         None
                                     };
 
-                                (
-                                    event::Status::Captured,
-                                    Some(Message::Scaled(scaling, translation)),
+                                Some(
+                                    canvas::Action::publish(Message::Scaled(
+                                        scaling,
+                                        translation,
+                                    ))
+                                    .and_capture(),
                                 )
                             } else {
-                                (event::Status::Captured, None)
+                                Some(canvas::Action::capture())
                             }
                         }
                     },
-                    _ => (event::Status::Ignored, None),
+                    _ => None,
                 },
-                _ => (event::Status::Ignored, None),
+                _ => None,
             }
         }
 
@@ -590,8 +576,8 @@ mod grid {
                     color: Color::WHITE,
                     size: 14.0.into(),
                     position: Point::new(frame.width(), frame.height()),
-                    horizontal_alignment: alignment::Horizontal::Right,
-                    vertical_alignment: alignment::Vertical::Bottom,
+                    align_x: text::Alignment::Right,
+                    align_y: alignment::Vertical::Bottom,
                     ..Text::default()
                 };
 
@@ -618,9 +604,7 @@ mod grid {
                 frame.into_geometry()
             };
 
-            if self.scaling < 0.2 || !self.show_lines {
-                vec![life, overlay]
-            } else {
+            if self.scaling >= 0.2 && self.show_lines {
                 let grid =
                     self.grid_cache.draw(renderer, bounds.size(), |frame| {
                         frame.translate(center);
@@ -657,6 +641,8 @@ mod grid {
                     });
 
                 vec![life, grid, overlay]
+            } else {
+                vec![life, overlay]
             }
         }
 
@@ -731,7 +717,8 @@ mod grid {
         fn tick(
             &mut self,
             amount: usize,
-        ) -> Option<impl Future<Output = Result<Life, TickError>>> {
+        ) -> Option<impl Future<Output = Result<Life, TickError>> + use<>>
+        {
             if self.is_ticking {
                 return None;
             }

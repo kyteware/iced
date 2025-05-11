@@ -1,4 +1,3 @@
-use crate::event::{self, Event};
 use crate::layout;
 use crate::mouse;
 use crate::overlay;
@@ -6,11 +5,10 @@ use crate::renderer;
 use crate::widget;
 use crate::widget::tree::{self, Tree};
 use crate::{
-    Border, Clipboard, Color, Layout, Length, Rectangle, Shell, Size, Vector,
-    Widget,
+    Border, Clipboard, Color, Event, Layout, Length, Rectangle, Shell, Size,
+    Vector, Widget,
 };
 
-use std::any::Any;
 use std::borrow::Borrow;
 
 /// A generic [`Widget`].
@@ -94,52 +92,35 @@ impl<'a, Message, Theme, Renderer> Element<'a, Message, Theme, Renderer> {
     /// producing them. Let's implement our __view logic__ now:
     ///
     /// ```no_run
-    /// # mod counter {
-    /// #     #[derive(Debug, Clone, Copy)]
-    /// #     pub enum Message {}
-    /// #     pub struct Counter;
+    /// # mod iced {
+    /// #     pub use iced_core::Function;
+    /// #     pub type Element<'a, Message> = iced_core::Element<'a, Message, iced_core::Theme, ()>;
     /// #
-    /// #     impl Counter {
-    /// #         pub fn view(
-    /// #             &self,
-    /// #         ) -> iced_core::Element<Message, (), iced_core::renderer::Null> {
+    /// #     pub mod widget {
+    /// #         pub fn row<'a, Message>(iter: impl IntoIterator<Item = super::Element<'a, Message>>) -> super::Element<'a, Message> {
     /// #             unimplemented!()
     /// #         }
     /// #     }
     /// # }
     /// #
-    /// # mod iced {
-    /// #     pub use iced_core::renderer::Null as Renderer;
-    /// #     pub use iced_core::Element;
+    /// # mod counter {
+    /// #     #[derive(Debug, Clone, Copy)]
+    /// #     pub enum Message {}
+    /// #     pub struct Counter;
     /// #
-    /// #     pub mod widget {
-    /// #         pub struct Row<Message> {
-    /// #             _t: std::marker::PhantomData<Message>,
-    /// #         }
+    /// #     pub type Element<'a, Message> = iced_core::Element<'a, Message, iced_core::Theme, ()>;
     /// #
-    /// #         impl<Message> Row<Message> {
-    /// #             pub fn new() -> Self {
-    /// #                 unimplemented!()
-    /// #             }
-    /// #
-    /// #             pub fn spacing(mut self, _: u32) -> Self {
-    /// #                 unimplemented!()
-    /// #             }
-    /// #
-    /// #             pub fn push(
-    /// #                 mut self,
-    /// #                 _: iced_core::Element<Message, (), iced_core::renderer::Null>,
-    /// #             ) -> Self {
-    /// #                 unimplemented!()
-    /// #             }
+    /// #     impl Counter {
+    /// #         pub fn view(&self) -> Element<Message> {
+    /// #             unimplemented!()
     /// #         }
     /// #     }
     /// # }
     /// #
     /// use counter::Counter;
     ///
-    /// use iced::widget::Row;
-    /// use iced::{Element, Renderer};
+    /// use iced::widget::row;
+    /// use iced::{Element, Function};
     ///
     /// struct ManyCounters {
     ///     counters: Vec<Counter>,
@@ -151,24 +132,21 @@ impl<'a, Message, Theme, Renderer> Element<'a, Message, Theme, Renderer> {
     /// }
     ///
     /// impl ManyCounters {
-    ///     pub fn view(&mut self) -> Row<Message> {
-    ///         // We can quickly populate a `Row` by folding over our counters
-    ///         self.counters.iter_mut().enumerate().fold(
-    ///             Row::new().spacing(20),
-    ///             |row, (index, counter)| {
-    ///                 // We display the counter
-    ///                 let element: Element<counter::Message, _, _> =
-    ///                     counter.view().into();
-    ///
-    ///                 row.push(
+    ///     pub fn view(&self) -> Element<Message> {
+    ///         // We can quickly populate a `row` by mapping our counters
+    ///         row(
+    ///             self.counters
+    ///                 .iter()
+    ///                 .map(Counter::view)
+    ///                 .enumerate()
+    ///                 .map(|(index, counter)| {
     ///                     // Here we turn our `Element<counter::Message>` into
     ///                     // an `Element<Message>` by combining the `index` and the
     ///                     // message of the `element`.
-    ///                     element
-    ///                         .map(move |message| Message::Counter(index, message)),
-    ///                 )
-    ///             },
+    ///                     counter.map(Message::Counter.with(index))
+    ///                 }),
     ///         )
+    ///         .into()
     ///     }
     /// }
     /// ```
@@ -308,6 +286,10 @@ where
         self.widget.size()
     }
 
+    fn size_hint(&self) -> Size<Length> {
+        self.widget.size_hint()
+    }
+
     fn layout(
         &self,
         tree: &mut Tree,
@@ -322,80 +304,26 @@ where
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn widget::Operation<B>,
+        operation: &mut dyn widget::Operation,
     ) {
-        struct MapOperation<'a, B> {
-            operation: &'a mut dyn widget::Operation<B>,
-        }
-
-        impl<'a, T, B> widget::Operation<T> for MapOperation<'a, B> {
-            fn container(
-                &mut self,
-                id: Option<&widget::Id>,
-                bounds: Rectangle,
-                operate_on_children: &mut dyn FnMut(
-                    &mut dyn widget::Operation<T>,
-                ),
-            ) {
-                self.operation.container(id, bounds, &mut |operation| {
-                    operate_on_children(&mut MapOperation { operation });
-                });
-            }
-
-            fn focusable(
-                &mut self,
-                state: &mut dyn widget::operation::Focusable,
-                id: Option<&widget::Id>,
-            ) {
-                self.operation.focusable(state, id);
-            }
-
-            fn scrollable(
-                &mut self,
-                state: &mut dyn widget::operation::Scrollable,
-                id: Option<&widget::Id>,
-                bounds: Rectangle,
-                translation: Vector,
-            ) {
-                self.operation.scrollable(state, id, bounds, translation);
-            }
-
-            fn text_input(
-                &mut self,
-                state: &mut dyn widget::operation::TextInput,
-                id: Option<&widget::Id>,
-            ) {
-                self.operation.text_input(state, id);
-            }
-
-            fn custom(&mut self, state: &mut dyn Any, id: Option<&widget::Id>) {
-                self.operation.custom(state, id);
-            }
-        }
-
-        self.widget.operate(
-            tree,
-            layout,
-            renderer,
-            &mut MapOperation { operation },
-        );
+        self.widget.operate(tree, layout, renderer, operation);
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, B>,
         viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         let mut local_messages = Vec::new();
         let mut local_shell = Shell::new(&mut local_messages);
 
-        let status = self.widget.on_event(
+        self.widget.update(
             tree,
             event,
             layout,
@@ -407,8 +335,6 @@ where
         );
 
         shell.merge(local_shell, &self.mapper);
-
-        status
     }
 
     fn draw(
@@ -440,13 +366,15 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
     ) -> Option<overlay::Element<'b, B, Theme, Renderer>> {
         let mapper = &self.mapper;
 
         self.widget
-            .overlay(tree, layout, renderer)
+            .overlay(tree, layout, renderer, viewport, translation)
             .map(move |overlay| overlay.map(mapper))
     }
 }
@@ -468,13 +396,17 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Explain<'a, Message, Theme, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Explain<'_, Message, Theme, Renderer>
 where
     Renderer: crate::Renderer,
 {
     fn size(&self) -> Size<Length> {
         self.element.widget.size()
+    }
+
+    fn size_hint(&self) -> Size<Length> {
+        self.element.widget.size_hint()
     }
 
     fn tag(&self) -> tree::Tag {
@@ -507,27 +439,27 @@ where
         state: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn widget::Operation<Message>,
+        operation: &mut dyn widget::Operation,
     ) {
         self.element
             .widget
             .operate(state, layout, renderer, operation);
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         state: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        self.element.widget.on_event(
+    ) {
+        self.element.widget.update(
             state, event, layout, cursor, renderer, clipboard, shell, viewport,
-        )
+        );
     }
 
     fn draw(
@@ -586,9 +518,17 @@ where
     fn overlay<'b>(
         &'b mut self,
         state: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
-        self.element.widget.overlay(state, layout, renderer)
+        self.element.widget.overlay(
+            state,
+            layout,
+            renderer,
+            viewport,
+            translation,
+        )
     }
 }

@@ -1,9 +1,8 @@
 //! Run commands and keep track of subscriptions.
-use crate::core::event::{self, Event};
 use crate::subscription;
-use crate::{BoxFuture, BoxStream, Executor, MaybeSend};
+use crate::{BoxStream, Executor, MaybeSend};
 
-use futures::{channel::mpsc, Sink};
+use futures::{Sink, channel::mpsc};
 use std::marker::PhantomData;
 
 /// A batteries-included runtime of commands and subscriptions.
@@ -51,22 +50,10 @@ where
         self.executor.enter(f)
     }
 
-    /// Spawns a [`Future`] in the [`Runtime`].
-    ///
-    /// The resulting `Message` will be forwarded to the `Sender` of the
-    /// [`Runtime`].
-    ///
-    /// [`Future`]: BoxFuture
-    pub fn spawn(&mut self, future: BoxFuture<Message>) {
-        use futures::{FutureExt, SinkExt};
-
-        let mut sender = self.sender.clone();
-
-        let future = future.then(|message| async move {
-            let _ = sender.send(message).await;
-        });
-
-        self.executor.spawn(future);
+    /// Runs a future to completion in the current thread within the [`Runtime`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn block_on<T>(&mut self, future: impl Future<Output = T>) -> T {
+        self.executor.block_on(future)
     }
 
     /// Runs a [`Stream`] in the [`Runtime`] until completion.
@@ -127,7 +114,7 @@ where
     /// See [`Tracker::broadcast`] to learn more.
     ///
     /// [`Tracker::broadcast`]: subscription::Tracker::broadcast
-    pub fn broadcast(&mut self, event: Event, status: event::Status) {
-        self.subscriptions.broadcast(event, status);
+    pub fn broadcast(&mut self, event: subscription::Event) {
+        self.subscriptions.broadcast(event);
     }
 }

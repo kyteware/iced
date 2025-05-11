@@ -1,48 +1,72 @@
-use crate::core::event::{self, Event};
+use crate::container;
 use crate::core::layout;
 use crate::core::mouse;
 use crate::core::overlay;
 use crate::core::renderer;
-use crate::core::widget::tree::{self, Tree};
 use crate::core::widget::Operation;
+use crate::core::widget::tree::{self, Tree};
 use crate::core::{
-    Clipboard, Element, Layout, Length, Point, Rectangle, Shell, Size, Vector,
-    Widget,
+    Background, Clipboard, Color, Element, Event, Layout, Length, Rectangle,
+    Shell, Size, Vector, Widget,
 };
+
+use std::marker::PhantomData;
 
 /// A widget that applies any `Theme` to its contents.
 ///
 /// This widget can be useful to leverage multiple `Theme`
 /// types in an application.
 #[allow(missing_debug_implementations)]
-pub struct Themer<'a, Message, Theme, Renderer>
+pub struct Themer<'a, Message, Theme, NewTheme, F, Renderer = crate::Renderer>
 where
+    F: Fn(&Theme) -> NewTheme,
     Renderer: crate::core::Renderer,
 {
-    content: Element<'a, Message, Theme, Renderer>,
-    theme: Theme,
+    content: Element<'a, Message, NewTheme, Renderer>,
+    to_theme: F,
+    text_color: Option<fn(&NewTheme) -> Color>,
+    background: Option<fn(&NewTheme) -> Background>,
+    old_theme: PhantomData<Theme>,
 }
 
-impl<'a, Message, Theme, Renderer> Themer<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, NewTheme, F, Renderer>
+    Themer<'a, Message, Theme, NewTheme, F, Renderer>
 where
+    F: Fn(&Theme) -> NewTheme,
     Renderer: crate::core::Renderer,
 {
     /// Creates an empty [`Themer`] that applies the given `Theme`
     /// to the provided `content`.
-    pub fn new<T>(theme: Theme, content: T) -> Self
+    pub fn new<T>(to_theme: F, content: T) -> Self
     where
-        T: Into<Element<'a, Message, Theme, Renderer>>,
+        T: Into<Element<'a, Message, NewTheme, Renderer>>,
     {
         Self {
-            theme,
             content: content.into(),
+            to_theme,
+            text_color: None,
+            background: None,
+            old_theme: PhantomData,
         }
+    }
+
+    /// Sets the default text [`Color`] of the [`Themer`].
+    pub fn text_color(mut self, f: fn(&NewTheme) -> Color) -> Self {
+        self.text_color = Some(f);
+        self
+    }
+
+    /// Sets the [`Background`] of the [`Themer`].
+    pub fn background(mut self, f: fn(&NewTheme) -> Background) -> Self {
+        self.background = Some(f);
+        self
     }
 }
 
-impl<'a, AnyTheme, Message, Theme, Renderer> Widget<Message, AnyTheme, Renderer>
-    for Themer<'a, Message, Theme, Renderer>
+impl<Message, Theme, NewTheme, F, Renderer> Widget<Message, Theme, Renderer>
+    for Themer<'_, Message, Theme, NewTheme, F, Renderer>
 where
+    F: Fn(&Theme) -> NewTheme,
     Renderer: crate::core::Renderer,
 {
     fn tag(&self) -> tree::Tag {
@@ -79,27 +103,27 @@ where
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn Operation<Message>,
+        operation: &mut dyn Operation,
     ) {
         self.content
             .as_widget()
             .operate(tree, layout, renderer, operation);
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        self.content.as_widget_mut().on_event(
+    ) {
+        self.content.as_widget_mut().update(
             tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-        )
+        );
     }
 
     fn mouse_interaction(
@@ -119,37 +143,54 @@ where
         &self,
         tree: &Tree,
         renderer: &mut Renderer,
-        _theme: &AnyTheme,
-        renderer_style: &renderer::Style,
+        theme: &Theme,
+        style: &renderer::Style,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        self.content.as_widget().draw(
-            tree,
-            renderer,
-            &self.theme,
-            renderer_style,
-            layout,
-            cursor,
-            viewport,
-        );
+        let theme = (self.to_theme)(theme);
+
+        if let Some(background) = self.background {
+            container::draw_background(
+                renderer,
+                &container::Style {
+                    background: Some(background(&theme)),
+                    ..container::Style::default()
+                },
+                layout.bounds(),
+            );
+        }
+
+        let style = if let Some(text_color) = self.text_color {
+            renderer::Style {
+                text_color: text_color(&theme),
+            }
+        } else {
+            *style
+        };
+
+        self.content
+            .as_widget()
+            .draw(tree, renderer, &theme, &style, layout, cursor, viewport);
     }
 
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &Renderer,
-    ) -> Option<overlay::Element<'b, Message, AnyTheme, Renderer>> {
-        struct Overlay<'a, Message, Theme, Renderer> {
-            theme: &'a Theme,
-            content: overlay::Element<'a, Message, Theme, Renderer>,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
+        struct Overlay<'a, Message, Theme, NewTheme, Renderer> {
+            to_theme: &'a dyn Fn(&Theme) -> NewTheme,
+            content: overlay::Element<'a, Message, NewTheme, Renderer>,
         }
 
-        impl<'a, AnyTheme, Message, Theme, Renderer>
-            overlay::Overlay<Message, AnyTheme, Renderer>
-            for Overlay<'a, Message, Theme, Renderer>
+        impl<Message, Theme, NewTheme, Renderer>
+            overlay::Overlay<Message, Theme, Renderer>
+            for Overlay<'_, Message, Theme, NewTheme, Renderer>
         where
             Renderer: crate::core::Renderer,
         {
@@ -157,112 +198,104 @@ where
                 &mut self,
                 renderer: &Renderer,
                 bounds: Size,
-                position: Point,
-                translation: Vector,
             ) -> layout::Node {
-                self.content.layout(
-                    renderer,
-                    bounds,
-                    translation + (position - Point::ORIGIN),
-                )
+                self.content.as_overlay_mut().layout(renderer, bounds)
             }
 
             fn draw(
                 &self,
                 renderer: &mut Renderer,
-                _theme: &AnyTheme,
+                theme: &Theme,
                 style: &renderer::Style,
                 layout: Layout<'_>,
                 cursor: mouse::Cursor,
             ) {
-                self.content
-                    .draw(renderer, self.theme, style, layout, cursor);
+                self.content.as_overlay().draw(
+                    renderer,
+                    &(self.to_theme)(theme),
+                    style,
+                    layout,
+                    cursor,
+                );
             }
 
-            fn on_event(
+            fn update(
                 &mut self,
-                event: Event,
+                event: &Event,
                 layout: Layout<'_>,
                 cursor: mouse::Cursor,
                 renderer: &Renderer,
                 clipboard: &mut dyn Clipboard,
                 shell: &mut Shell<'_, Message>,
-            ) -> event::Status {
+            ) {
                 self.content
-                    .on_event(event, layout, cursor, renderer, clipboard, shell)
+                    .as_overlay_mut()
+                    .update(event, layout, cursor, renderer, clipboard, shell);
             }
 
             fn operate(
                 &mut self,
                 layout: Layout<'_>,
                 renderer: &Renderer,
-                operation: &mut dyn Operation<Message>,
+                operation: &mut dyn Operation,
             ) {
-                self.content.operate(layout, renderer, operation);
+                self.content
+                    .as_overlay_mut()
+                    .operate(layout, renderer, operation);
             }
 
             fn mouse_interaction(
                 &self,
                 layout: Layout<'_>,
                 cursor: mouse::Cursor,
-                viewport: &Rectangle,
                 renderer: &Renderer,
             ) -> mouse::Interaction {
                 self.content
-                    .mouse_interaction(layout, cursor, viewport, renderer)
-            }
-
-            fn is_over(
-                &self,
-                layout: Layout<'_>,
-                renderer: &Renderer,
-                cursor_position: Point,
-            ) -> bool {
-                self.content.is_over(layout, renderer, cursor_position)
+                    .as_overlay()
+                    .mouse_interaction(layout, cursor, renderer)
             }
 
             fn overlay<'b>(
                 &'b mut self,
                 layout: Layout<'_>,
                 renderer: &Renderer,
-            ) -> Option<overlay::Element<'b, Message, AnyTheme, Renderer>>
+            ) -> Option<overlay::Element<'b, Message, Theme, Renderer>>
             {
                 self.content
+                    .as_overlay_mut()
                     .overlay(layout, renderer)
                     .map(|content| Overlay {
-                        theme: self.theme,
+                        to_theme: &self.to_theme,
                         content,
                     })
-                    .map(|overlay| {
-                        overlay::Element::new(Point::ORIGIN, Box::new(overlay))
-                    })
+                    .map(|overlay| overlay::Element::new(Box::new(overlay)))
             }
         }
 
         self.content
             .as_widget_mut()
-            .overlay(tree, layout, renderer)
+            .overlay(tree, layout, renderer, viewport, translation)
             .map(|content| Overlay {
-                theme: &self.theme,
+                to_theme: &self.to_theme,
                 content,
             })
-            .map(|overlay| {
-                overlay::Element::new(Point::ORIGIN, Box::new(overlay))
-            })
+            .map(|overlay| overlay::Element::new(Box::new(overlay)))
     }
 }
 
-impl<'a, AnyTheme, Message, Theme, Renderer>
-    From<Themer<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, AnyTheme, Renderer>
+impl<'a, Message, Theme, NewTheme, F, Renderer>
+    From<Themer<'a, Message, Theme, NewTheme, F, Renderer>>
+    for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Theme: 'a,
+    NewTheme: 'a,
+    F: Fn(&Theme) -> NewTheme + 'a,
     Renderer: 'a + crate::core::Renderer,
 {
     fn from(
-        themer: Themer<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, AnyTheme, Renderer> {
+        themer: Themer<'a, Message, Theme, NewTheme, F, Renderer>,
+    ) -> Element<'a, Message, Theme, Renderer> {
         Element::new(themer)
     }
 }

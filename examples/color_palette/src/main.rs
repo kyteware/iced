@@ -1,22 +1,24 @@
-use iced::alignment::{self, Alignment};
+use iced::alignment;
 use iced::mouse;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path};
-use iced::widget::{column, row, text, Slider};
+use iced::widget::{Slider, column, row, text};
 use iced::{
-    Color, Element, Length, Pixels, Point, Rectangle, Renderer, Sandbox,
-    Settings, Size, Vector,
+    Center, Color, Element, Fill, Font, Pixels, Point, Rectangle, Renderer,
+    Size, Vector,
 };
-use palette::{
-    self, convert::FromColor, rgb::Rgb, Darken, Hsl, Lighten, ShiftHue,
-};
+use palette::{Darken, Hsl, Lighten, ShiftHue, convert::FromColor, rgb::Rgb};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 
 pub fn main() -> iced::Result {
-    ColorPalette::run(Settings {
-        antialiasing: true,
-        ..Settings::default()
-    })
+    iced::application(
+        ColorPalette::default,
+        ColorPalette::update,
+        ColorPalette::view,
+    )
+    .theme(ColorPalette::theme)
+    .default_font(Font::MONOSPACE)
+    .run()
 }
 
 #[derive(Default)]
@@ -40,20 +42,10 @@ pub enum Message {
     LchColorChanged(palette::Lch),
 }
 
-impl Sandbox for ColorPalette {
-    type Message = Message;
-
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn title(&self) -> String {
-        String::from("Color palette - Iced")
-    }
-
+impl ColorPalette {
     fn update(&mut self, message: Message) {
         let srgb = match message {
-            Message::RgbColorChanged(rgb) => Rgb::from(rgb),
+            Message::RgbColorChanged(rgb) => to_rgb(rgb),
             Message::HslColorChanged(hsl) => Rgb::from_color(hsl),
             Message::HsvColorChanged(hsv) => Rgb::from_color(hsv),
             Message::HwbColorChanged(hwb) => Rgb::from_color(hwb),
@@ -61,13 +53,13 @@ impl Sandbox for ColorPalette {
             Message::LchColorChanged(lch) => Rgb::from_color(lch),
         };
 
-        self.theme = Theme::new(srgb);
+        self.theme = Theme::new(to_color(srgb));
     }
 
     fn view(&self) -> Element<Message> {
         let base = self.theme.base;
 
-        let srgb = Rgb::from(base);
+        let srgb = to_rgb(base);
         let hsl = palette::Hsl::from_color(srgb);
         let hsv = palette::Hsv::from_color(srgb);
         let hwb = palette::Hwb::from_color(srgb);
@@ -87,6 +79,20 @@ impl Sandbox for ColorPalette {
         .spacing(10)
         .into()
     }
+
+    fn theme(&self) -> iced::Theme {
+        iced::Theme::custom(
+            String::from("Custom"),
+            iced::theme::Palette {
+                background: self.theme.base,
+                primary: *self.theme.lower.first().unwrap(),
+                text: *self.theme.higher.last().unwrap(),
+                success: *self.theme.lower.last().unwrap(),
+                warning: *self.theme.higher.last().unwrap(),
+                danger: *self.theme.higher.last().unwrap(),
+            },
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -102,7 +108,7 @@ impl Theme {
         let base = base.into();
 
         // Convert to HSL color for manipulation
-        let hsl = Hsl::from_color(Rgb::from(base));
+        let hsl = Hsl::from_color(to_rgb(base));
 
         let lower = [
             hsl.shift_hue(-135.0).lighten(0.075),
@@ -121,12 +127,12 @@ impl Theme {
         Theme {
             lower: lower
                 .iter()
-                .map(|&color| Rgb::from_color(color).into())
+                .map(|&color| to_color(Rgb::from_color(color)))
                 .collect(),
             base,
             higher: higher
                 .iter()
-                .map(|&color| Rgb::from_color(color).into())
+                .map(|&color| to_color(Rgb::from_color(color)))
                 .collect(),
             canvas_cache: canvas::Cache::default(),
         }
@@ -144,13 +150,10 @@ impl Theme {
     }
 
     pub fn view(&self) -> Element<Message> {
-        Canvas::new(self)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        Canvas::new(self).width(Fill).height(Fill).into()
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&self, frame: &mut Frame, text_color: Color) {
         let pad = 20.0;
 
         let box_size = Size {
@@ -166,9 +169,10 @@ impl Theme {
         });
 
         let mut text = canvas::Text {
-            horizontal_alignment: alignment::Horizontal::Center,
-            vertical_alignment: alignment::Vertical::Top,
+            align_x: text::Alignment::Center,
+            align_y: alignment::Vertical::Top,
             size: Pixels(15.0),
+            color: text_color,
             ..canvas::Text::default()
         };
 
@@ -209,16 +213,16 @@ impl Theme {
             });
         }
 
-        text.vertical_alignment = alignment::Vertical::Bottom;
+        text.align_y = alignment::Vertical::Bottom;
 
-        let hsl = Hsl::from_color(Rgb::from(self.base));
+        let hsl = Hsl::from_color(to_rgb(self.base));
         for i in 0..self.len() {
             let pct = (i as f32 + 1.0) / (self.len() as f32 + 1.0);
             let graded = Hsl {
                 lightness: 1.0 - pct,
                 ..hsl
             };
-            let color: Color = Rgb::from_color(graded).into();
+            let color: Color = to_color(Rgb::from_color(graded));
 
             let anchor = Point {
                 x: (i as f32) * box_size.width,
@@ -246,12 +250,14 @@ impl<Message> canvas::Program<Message> for Theme {
         &self,
         _state: &Self::State,
         renderer: &Renderer,
-        _theme: &iced::Theme,
+        theme: &iced::Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let theme = self.canvas_cache.draw(renderer, bounds.size(), |frame| {
-            self.draw(frame);
+            let palette = theme.extended_palette();
+
+            self.draw(frame, palette.background.base.text);
         });
 
         vec![theme]
@@ -308,10 +314,10 @@ impl<C: ColorSpace + Copy> ColorPicker<C> {
             slider(cr1, c1, move |v| C::new(v, c2, c3)),
             slider(cr2, c2, move |v| C::new(c1, v, c3)),
             slider(cr3, c3, move |v| C::new(c1, c2, v)),
-            text(color.to_string()).width(185).size(14),
+            text(color.to_string()).width(185).size(12),
         ]
         .spacing(10)
-        .align_items(Alignment::Center)
+        .align_y(Center)
         .into()
     }
 }
@@ -466,5 +472,23 @@ impl ColorSpace for palette::Lch {
             self.chroma,
             self.hue.into_positive_degrees()
         )
+    }
+}
+
+fn to_rgb(color: Color) -> Rgb {
+    Rgb {
+        red: color.r,
+        green: color.g,
+        blue: color.b,
+        ..Rgb::default()
+    }
+}
+
+fn to_color(rgb: Rgb) -> Color {
+    Color {
+        r: rgb.red,
+        g: rgb.green,
+        b: rgb.blue,
+        a: 1.0,
     }
 }

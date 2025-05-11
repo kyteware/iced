@@ -5,6 +5,253 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.13.1] - 2024-09-19
+### Added
+- Some `From` trait implementations for `text_input::Id`. [#2582](https://github.com/iced-rs/iced/pull/2582)
+- Custom `Executor` support for `Application` and `Daemon`. [#2580](https://github.com/iced-rs/iced/pull/2580)
+- `rust-version` metadata to `Cargo.toml`. [#2579](https://github.com/iced-rs/iced/pull/2579)
+- Widget examples to API reference. [#2587](https://github.com/iced-rs/iced/pull/2587)
+
+### Fixed
+- Inverted scrolling direction with trackpad in `scrollable`. [#2583](https://github.com/iced-rs/iced/pull/2583)
+- `scrollable` transactions when `on_scroll` is not set. [#2584](https://github.com/iced-rs/iced/pull/2584)
+- Incorrect text color styling in `text_editor` widget. [#2586](https://github.com/iced-rs/iced/pull/2586)
+
+Many thanks to...
+- @dcampbell24
+- @lufte
+- @mtkennerly
+
+## [0.13.0] - 2024-09-18
+### Added
+- Introductory chapters to the [official guide book](https://book.iced.rs/).
+- [Pocket guide](https://docs.rs/iced/0.13.0/iced/#the-pocket-guide) in API reference.
+- `Program` API. [#2331](https://github.com/iced-rs/iced/pull/2331)
+- `Task` API. [#2463](https://github.com/iced-rs/iced/pull/2463)
+- `Daemon` API and Shell Runtime Unification. [#2469](https://github.com/iced-rs/iced/pull/2469)
+- `rich_text` and `markdown` widgets. [#2508](https://github.com/iced-rs/iced/pull/2508)
+- `stack` widget. [#2405](https://github.com/iced-rs/iced/pull/2405)
+- `hover` widget. [#2408](https://github.com/iced-rs/iced/pull/2408)
+- `row::Wrapping` widget. [#2539](https://github.com/iced-rs/iced/pull/2539)
+- `text` macro helper. [#2338](https://github.com/iced-rs/iced/pull/2338)
+- `text::Wrapping` support. [#2279](https://github.com/iced-rs/iced/pull/2279)
+- Functional widget styling. [#2312](https://github.com/iced-rs/iced/pull/2312)
+- Closure-based widget styling. [#2326](https://github.com/iced-rs/iced/pull/2326)
+- Class-based Theming. [#2350](https://github.com/iced-rs/iced/pull/2350)
+- Type-Driven Renderer Fallback. [#2351](https://github.com/iced-rs/iced/pull/2351)
+- Background styling to `rich_text` widget. [#2516](https://github.com/iced-rs/iced/pull/2516)
+- Underline support for `rich_text`. [#2526](https://github.com/iced-rs/iced/pull/2526)
+- Strikethrough support for `rich_text`. [#2528](https://github.com/iced-rs/iced/pull/2528)
+- Abortable `Task`. [#2496](https://github.com/iced-rs/iced/pull/2496)
+- `abort_on_drop` to `task::Handle`. [#2503](https://github.com/iced-rs/iced/pull/2503)
+- `Ferra` theme. [#2329](https://github.com/iced-rs/iced/pull/2329)
+- `auto-detect-theme` feature. [#2343](https://github.com/iced-rs/iced/pull/2343)
+- Custom key binding support for `text_editor`. [#2522](https://github.com/iced-rs/iced/pull/2522)
+- `align_x` for `text_input` widget. [#2535](https://github.com/iced-rs/iced/pull/2535)
+- `center` widget helper. [#2423](https://github.com/iced-rs/iced/pull/2423)
+- Rotation support for `image` and `svg` widgets. [#2334](https://github.com/iced-rs/iced/pull/2334)
+- Dynamic `opacity` support for `image` and `svg`. [#2424](https://github.com/iced-rs/iced/pull/2424)
+- Scroll transactions for `scrollable` widget. [#2401](https://github.com/iced-rs/iced/pull/2401)
+- `physical_key` and `modified_key` to `keyboard::Event`. [#2576](https://github.com/iced-rs/iced/pull/2576)
+- `fetch_position` command in `window` module. [#2280](https://github.com/iced-rs/iced/pull/2280)
+- `filter_method` property for `image::Viewer` widget. [#2324](https://github.com/iced-rs/iced/pull/2324)
+- Support for pre-multiplied alpha `wgpu` composite mode. [#2341](https://github.com/iced-rs/iced/pull/2341)
+- `text_size` and `line_height` properties for `text_editor` widget. [#2358](https://github.com/iced-rs/iced/pull/2358)
+- `is_focused` method for `text_editor::State`. [#2386](https://github.com/iced-rs/iced/pull/2386)
+- `canvas::Cache` Grouping. [#2415](https://github.com/iced-rs/iced/pull/2415)
+- `ICED_PRESENT_MODE` env var to pick a `wgpu::PresentMode`. [#2428](https://github.com/iced-rs/iced/pull/2428)
+- `SpecificWith` variant to `window::Position`. [#2435](https://github.com/iced-rs/iced/pull/2435)
+- `scale_factor` field to `window::Screenshot`. [#2449](https://github.com/iced-rs/iced/pull/2449)
+- Styling support for `overlay::Menu` of `pick_list` widget. [#2457](https://github.com/iced-rs/iced/pull/2457)
+- `window::Id` in `Event` subscriptions. [#2456](https://github.com/iced-rs/iced/pull/2456)
+- `FromIterator` implementation for `row` and `column`. [#2460](https://github.com/iced-rs/iced/pull/2460)
+- `content_fit` for `image::viewer` widget. [#2330](https://github.com/iced-rs/iced/pull/2330)
+- `Display` implementation for `Radians`. [#2446](https://github.com/iced-rs/iced/pull/2446)
+- Helper methods for `window::Settings` in `Application`. [#2470](https://github.com/iced-rs/iced/pull/2470)
+- `Copy` implementation for `canvas::Fill` and `canvas::Stroke`. [#2475](https://github.com/iced-rs/iced/pull/2475)
+- Clarification of `Border` alignment for `Quad`. [#2485](https://github.com/iced-rs/iced/pull/2485)
+- "Select All" functionality on `Ctrl+A` to `text_editor`. [#2321](https://github.com/iced-rs/iced/pull/2321)
+- `stream::try_channel` helper. [#2497](https://github.com/iced-rs/iced/pull/2497)
+- `iced` widget helper to display the iced logo :comet:. [#2498](https://github.com/iced-rs/iced/pull/2498)
+- `align_x` and `align_y` helpers to `scrollable`. [#2499](https://github.com/iced-rs/iced/pull/2499)
+- Built-in text styles for each `Palette` color. [#2500](https://github.com/iced-rs/iced/pull/2500)
+- Embedded `Scrollbar` support for `scrollable`. [#2269](https://github.com/iced-rs/iced/pull/2269)
+- `on_press_with` method for `button`. [#2502](https://github.com/iced-rs/iced/pull/2502)
+- `resize_events` subscription to `window` module. [#2505](https://github.com/iced-rs/iced/pull/2505)
+- `Link` support to `rich_text` widget. [#2512](https://github.com/iced-rs/iced/pull/2512)
+- `image` and `svg` support for `canvas` widget. [#2537](https://github.com/iced-rs/iced/pull/2537)
+- `Compact` variant for `pane_grid::Controls`. [#2555](https://github.com/iced-rs/iced/pull/2555)
+- `image-without-codecs` feature flag. [#2244](https://github.com/iced-rs/iced/pull/2244)
+- `container::background` styling helper. [#2261](https://github.com/iced-rs/iced/pull/2261)
+- `undecorated_shadow` window setting for Windows. [#2285](https://github.com/iced-rs/iced/pull/2285)
+- Tasks for setting mouse passthrough. [#2284](https://github.com/iced-rs/iced/pull/2284)
+- `*_maybe` helpers for `text_input` widget. [#2390](https://github.com/iced-rs/iced/pull/2390)
+- Wasm support for `download_progress` example. [#2419](https://github.com/iced-rs/iced/pull/2419)
+- `scrollable::scroll_by` widget operation. [#2436](https://github.com/iced-rs/iced/pull/2436)
+- Enhancements to `slider` widget styling. [#2444](https://github.com/iced-rs/iced/pull/2444)
+- `on_scroll` handler to `mouse_area` widget. [#2450](https://github.com/iced-rs/iced/pull/2450)
+- `stroke_rectangle` method to `canvas::Frame`. [#2473](https://github.com/iced-rs/iced/pull/2473)
+- `override_redirect` setting for X11 windows. [#2476](https://github.com/iced-rs/iced/pull/2476)
+- Disabled state support for `toggler` widget. [#2478](https://github.com/iced-rs/iced/pull/2478)
+- `Color::parse` helper for parsing color strings. [#2486](https://github.com/iced-rs/iced/pull/2486)
+- `rounded_rectangle` method to `canvas::Path`. [#2491](https://github.com/iced-rs/iced/pull/2491)
+- `width` method to `text_editor` widget. [#2513](https://github.com/iced-rs/iced/pull/2513)
+- `on_open` handler to `combo_box` widget. [#2534](https://github.com/iced-rs/iced/pull/2534)
+- Additional `mouse::Interaction` cursors. [#2551](https://github.com/iced-rs/iced/pull/2551)
+- Scroll wheel handling in `slider` widget. [#2565](https://github.com/iced-rs/iced/pull/2565)
+
+### Changed
+- Use a `StagingBelt` in `iced_wgpu` for regular buffer uploads. [#2357](https://github.com/iced-rs/iced/pull/2357)
+- Use generic `Content` in `Text` to avoid reallocation in `fill_text`. [#2360](https://github.com/iced-rs/iced/pull/2360)
+- Use `Iterator::size_hint` to initialize `Column` and `Row` capacity. [#2362](https://github.com/iced-rs/iced/pull/2362)
+- Specialize `widget::text` helper. [#2363](https://github.com/iced-rs/iced/pull/2363)
+- Use built-in `[lints]` table in `Cargo.toml`. [#2377](https://github.com/iced-rs/iced/pull/2377)
+- Target `#iced` container by default on Wasm. [#2342](https://github.com/iced-rs/iced/pull/2342)
+- Improved architecture for `iced_wgpu` and `iced_tiny_skia`. [#2382](https://github.com/iced-rs/iced/pull/2382)
+- Make image `Cache` eviction strategy less aggressive in `iced_wgpu`. [#2403](https://github.com/iced-rs/iced/pull/2403)
+- Retain caches in `iced_wgpu` as long as `Rc` values are alive. [#2409](https://github.com/iced-rs/iced/pull/2409)
+- Use `bytes` crate for `image` widget. [#2356](https://github.com/iced-rs/iced/pull/2356)
+- Update `winit` to `0.30`. [#2427](https://github.com/iced-rs/iced/pull/2427)
+- Reuse `glyphon::Pipeline` state in `iced_wgpu`. [#2430](https://github.com/iced-rs/iced/pull/2430)
+- Ask for explicit `Length` in `center_*` methods. [#2441](https://github.com/iced-rs/iced/pull/2441)
+- Hide internal `Task` constructors. [#2492](https://github.com/iced-rs/iced/pull/2492)
+- Hide `Subscription` internals. [#2493](https://github.com/iced-rs/iced/pull/2493)
+- Improved `view` ergonomics. [#2504](https://github.com/iced-rs/iced/pull/2504)
+- Update `cosmic-text` and `resvg`. [#2416](https://github.com/iced-rs/iced/pull/2416)
+- Snap `Quad` lines to the pixel grid in `iced_wgpu`. [#2531](https://github.com/iced-rs/iced/pull/2531)
+- Update `web-sys` to `0.3.69`. [#2507](https://github.com/iced-rs/iced/pull/2507)
+- Allow disabled `TextInput` to still be interacted with. [#2262](https://github.com/iced-rs/iced/pull/2262)
+- Enable horizontal scrolling without shift modifier for `srollable` widget. [#2392](https://github.com/iced-rs/iced/pull/2392)
+- Add `mouse::Button` to `mouse::Click`. [#2414](https://github.com/iced-rs/iced/pull/2414)
+- Notify `scrollable::Viewport` changes. [#2438](https://github.com/iced-rs/iced/pull/2438)
+- Improved documentation of `Component` state management. [#2556](https://github.com/iced-rs/iced/pull/2556)
+
+### Fixed
+- Fix `block_on` in `iced_wgpu` hanging Wasm builds. [#2313](https://github.com/iced-rs/iced/pull/2313)
+- Private `PaneGrid` style fields. [#2316](https://github.com/iced-rs/iced/pull/2316)
+- Some documentation typos. [#2317](https://github.com/iced-rs/iced/pull/2317)
+- Blurry input caret with non-integral scaling. [#2320](https://github.com/iced-rs/iced/pull/2320)
+- Scrollbar stuck in a `scrollable` under some circumstances. [#2322](https://github.com/iced-rs/iced/pull/2322)
+- Broken `wgpu` examples link in issue template. [#2327](https://github.com/iced-rs/iced/pull/2327)
+- Empty `wgpu` draw calls in `image` pipeline. [#2344](https://github.com/iced-rs/iced/pull/2344)
+- Layout invalidation for `Responsive` widget. [#2345](https://github.com/iced-rs/iced/pull/2345)
+- Incorrect shadows on quads with rounded corners. [#2354](https://github.com/iced-rs/iced/pull/2354)
+- Empty menu overlay on `combo_box`. [#2364](https://github.com/iced-rs/iced/pull/2364)
+- Copy / cut vulnerability in a secure `TextInput`. [#2366](https://github.com/iced-rs/iced/pull/2366)
+- Inadequate readability / contrast for built-in themes. [#2376](https://github.com/iced-rs/iced/pull/2376)
+- Fix `pkg-config` typo in `DEPENDENCIES.md`. [#2379](https://github.com/iced-rs/iced/pull/2379)
+- Unbounded memory consumption by `iced_winit::Proxy`. [#2389](https://github.com/iced-rs/iced/pull/2389)
+- Typo in `icon::Error` message. [#2393](https://github.com/iced-rs/iced/pull/2393)
+- Nested scrollables capturing all scroll events. [#2397](https://github.com/iced-rs/iced/pull/2397)
+- Content capturing scrollbar events in a `scrollable`. [#2406](https://github.com/iced-rs/iced/pull/2406)
+- Out of bounds caret and overflow when scrolling in `text_editor`. [#2407](https://github.com/iced-rs/iced/pull/2407)
+- Missing `derive(Default)` in overview code snippet. [#2412](https://github.com/iced-rs/iced/pull/2412)
+- `image::Viewer` triggering grab from outside the widget. [#2420](https://github.com/iced-rs/iced/pull/2420)
+- Different windows fighting over shared `image::Cache`. [#2425](https://github.com/iced-rs/iced/pull/2425)
+- Images not aligned to the (logical) pixel grid in `iced_wgpu`. [#2440](https://github.com/iced-rs/iced/pull/2440)
+- Incorrect local time in `clock` example under Unix systems. [#2421](https://github.com/iced-rs/iced/pull/2421)
+- `⌘ + ←` and `⌘ + →` behavior for `text_input` on macOS. [#2315](https://github.com/iced-rs/iced/pull/2315)
+- Wayland packages in `DEPENDENCIES.md`. [#2465](https://github.com/iced-rs/iced/pull/2465)
+- Typo in documentation. [#2487](https://github.com/iced-rs/iced/pull/2487)
+- Extraneous comment in `scrollable` module. [#2488](https://github.com/iced-rs/iced/pull/2488)
+- Top layer in `hover` widget hiding when focused. [#2544](https://github.com/iced-rs/iced/pull/2544)
+- Out of bounds text in `text_editor` widget. [#2536](https://github.com/iced-rs/iced/pull/2536)
+- Segfault on Wayland when closing the app. [#2547](https://github.com/iced-rs/iced/pull/2547)
+- `lazy` feature flag sometimes not present in documentation. [#2289](https://github.com/iced-rs/iced/pull/2289)
+- Border of `progress_bar` widget being rendered below the active bar. [#2443](https://github.com/iced-rs/iced/pull/2443)
+- `radii` typo in `iced_wgpu` shader. [#2484](https://github.com/iced-rs/iced/pull/2484)
+- Incorrect priority of `Binding::Delete` in `text_editor`. [#2514](https://github.com/iced-rs/iced/pull/2514)
+- Division by zero in `multitouch` example. [#2517](https://github.com/iced-rs/iced/pull/2517)
+- Invisible text in `svg` widget. [#2560](https://github.com/iced-rs/iced/pull/2560)
+- `wasm32` deployments not displaying anything. [#2574](https://github.com/iced-rs/iced/pull/2574)
+- Unnecessary COM initialization on Windows. [#2578](https://github.com/iced-rs/iced/pull/2578)
+
+### Removed
+- Unnecessary struct from `download_progress` example. [#2380](https://github.com/iced-rs/iced/pull/2380)
+- Out of date comment from `custom_widget` example. [#2549](https://github.com/iced-rs/iced/pull/2549)
+- `Clone` bound for `graphics::Cache::clear`. [#2575](https://github.com/iced-rs/iced/pull/2575)
+
+Many thanks to...
+- @Aaron-McGuire
+- @airstrike
+- @alex-ds13
+- @alliby
+- @Andrew-Schwartz
+- @ayeniswe
+- @B0ney
+- @Bajix
+- @blazra
+- @Brady-Simon
+- @breynard0
+- @bungoboingo
+- @casperstorm
+- @Davidster
+- @derezzedex
+- @DKolter
+- @dtoniolo
+- @dtzxporter
+- @fenhl
+- @Gigas002
+- @gintsgints
+- @henrispriet
+- @IsaacMarovitz
+- @ivanceras
+- @Jinderamarak
+- @JL710
+- @jquesada2016
+- @JustSoup312
+- @kiedtl
+- @kmoon2437
+- @Koranir
+- @lufte
+- @LuisLiraC
+- @m4rch3n1ng
+- @meithecatte
+- @mtkennerly
+- @myuujiku
+- @n1ght-hunter
+- @nrjais
+- @PgBiel
+- @PolyMeilex
+- @rustrover
+- @ryankopf
+- @saihaze
+- @shartrec
+- @skygrango
+- @SolidStateDj
+- @sundaram123krishnan
+- @tarkah
+- @vladh
+- @WailAbou
+- @wiiznokes
+- @woelfman
+- @Zaubentrucker
+
+## [0.12.1] - 2024-02-22
+### Added
+- `extend` and `from_vec` methods for `Column` and `Row`. [#2264](https://github.com/iced-rs/iced/pull/2264)
+- `PartialOrd`, `Ord`, and `Hash` implementations for `keyboard::Modifiers`. [#2270](https://github.com/iced-rs/iced/pull/2270)
+- `clipboard` module in `advanced` module. [#2272](https://github.com/iced-rs/iced/pull/2272)
+- Default `disabled` style for `checkbox` and `hovered` style for `Svg`. [#2273](https://github.com/iced-rs/iced/pull/2273)
+- `From<u16>` and `From<i32>` implementations for `border::Radius`. [#2274](https://github.com/iced-rs/iced/pull/2274)
+- `size_hint` method for `Component` trait. [#2275](https://github.com/iced-rs/iced/pull/2275)
+
+### Fixed
+- Black images when using OpenGL backend in `iced_wgpu`. [#2259](https://github.com/iced-rs/iced/pull/2259)
+- Documentation for `horizontal_space` and `vertical_space` helpers. [#2265](https://github.com/iced-rs/iced/pull/2265)
+- WebAssembly platform. [#2271](https://github.com/iced-rs/iced/pull/2271)
+- Decouple `Key` from `keyboard::Modifiers` and apply them to `text` in `KeyboardInput`. [#2238](https://github.com/iced-rs/iced/pull/2238)
+- Text insertion not being prioritized in `TextInput` and `TextEditor`. [#2278](https://github.com/iced-rs/iced/pull/2278)
+- `iced_tiny_skia` clipping line strokes. [#2282](https://github.com/iced-rs/iced/pull/2282)
+
+Many thanks to...
+
+- @PolyMeilex
+- @rizzen-yazston
+- @wash2
+
+## [0.12.0] - 2024-02-15
 ### Added
 - Multi-window support. [#1964](https://github.com/iced-rs/iced/pull/1964)
 - `TextEditor` widget (or multi-line text input). [#2123](https://github.com/iced-rs/iced/pull/2123)
@@ -15,12 +262,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explicit text caching. [#2058](https://github.com/iced-rs/iced/pull/2058)
 - Gradients in Oklab color space. [#2055](https://github.com/iced-rs/iced/pull/2055)
 - `Themer` widget. [#2209](https://github.com/iced-rs/iced/pull/2209)
+- `Transform` primitive. [#2120](https://github.com/iced-rs/iced/pull/2120)
 - Cut functionality for `TextEditor`. [#2215](https://github.com/iced-rs/iced/pull/2215)
+- Primary clipboard support. [#2240](https://github.com/iced-rs/iced/pull/2240)
+- Disabled state for `Checkbox`. [#2109](https://github.com/iced-rs/iced/pull/2109)
 - `skip_taskbar` window setting for Windows. [#2211](https://github.com/iced-rs/iced/pull/2211)
-- `fetch_maximized` and `fetch_minimized` window commands. [#2189](https://github.com/iced-rs/iced/pull/2189)
+- `fetch_maximized` and `fetch_minimized` commands in `window`. [#2189](https://github.com/iced-rs/iced/pull/2189)
+- `run_with_handle` command in `window`. [#2200](https://github.com/iced-rs/iced/pull/2200)
+- `show_system_menu` command in `window`. [#2243](https://github.com/iced-rs/iced/pull/2243)
 - `text_shaping` method for `Tooltip`. [#2172](https://github.com/iced-rs/iced/pull/2172)
+- `interaction` method for `MouseArea`. [#2207](https://github.com/iced-rs/iced/pull/2207)
 - `hovered` styling for `Svg` widget. [#2163](https://github.com/iced-rs/iced/pull/2163)
+- `height` method for `TextEditor`. [#2221](https://github.com/iced-rs/iced/pull/2221)
 - Customizable style for `TextEditor`. [#2159](https://github.com/iced-rs/iced/pull/2159)
+- Customizable style for `QRCode`. [#2229](https://github.com/iced-rs/iced/pull/2229)
+- Border width styling for `Toggler`. [#2219](https://github.com/iced-rs/iced/pull/2219)
 - `RawText` variant for `Primitive` in `iced_graphics`. [#2158](https://github.com/iced-rs/iced/pull/2158)
 - `Stream` support for `Command`. [#2150](https://github.com/iced-rs/iced/pull/2150)
 - Access to bounds/content bounds from a `Scrollable` viewport. [#2072](https://github.com/iced-rs/iced/pull/2072)
@@ -28,6 +284,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `theme::Custom::with_fn` to generate completely custom themes. [#2067](https://github.com/iced-rs/iced/pull/2067)
 - `style` attribute for `Font`. [#2041](https://github.com/iced-rs/iced/pull/2041)
 - Texture filtering options for `Image`. [#1894](https://github.com/iced-rs/iced/pull/1894)
+- `default` and `shift_step` methods for `slider` widgets. [#2100](https://github.com/iced-rs/iced/pull/2100)
+- `Custom` variant to `command::Action`. [#2146](https://github.com/iced-rs/iced/pull/2146)
+- Mouse movement events for `MouseArea`. [#2147](https://github.com/iced-rs/iced/pull/2147)
+- Dracula, Nord, Solarized, and Gruvbox variants for `Theme`. [#2170](https://github.com/iced-rs/iced/pull/2170)
+- Catppuccin, Tokyo Night, Kanagawa, Moonfly, Nightfly and Oxocarbon variants for `Theme`. [#2233](https://github.com/iced-rs/iced/pull/2233)
+- `From<T> where T: Into<PathBuf>` for `svg::Handle`. [#2235](https://github.com/iced-rs/iced/pull/2235)
+- `on_open` and `on_close` handlers for `PickList`. [#2174](https://github.com/iced-rs/iced/pull/2174)
+- Support for generic `Element` in `Tooltip`. [#2228](https://github.com/iced-rs/iced/pull/2228)
+- Container and `gap` styling for `Scrollable`. [#2239](https://github.com/iced-rs/iced/pull/2239)
+- Use `Borrow` for both `options` and `selected` in PickList. [#2251](https://github.com/iced-rs/iced/pull/2251)
+- `clip` property for `Container`, `Column`, `Row`, and `Button`. #[2252](https://github.com/iced-rs/iced/pull/2252)
 
 ### Changed
 - Enable WebGPU backend in `wgpu` by default instead of WebGL. [#2068](https://github.com/iced-rs/iced/pull/2068)
@@ -44,6 +311,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use workspace dependencies and package inheritance. [#2069](https://github.com/iced-rs/iced/pull/2069)
 - Update `wgpu` to `0.17`. [#2065](https://github.com/iced-rs/iced/pull/2065)
 - Support automatic style type casting for `Button`. [#2046](https://github.com/iced-rs/iced/pull/2046)
+- Make `with_clip` and `with_save` in `Frame` able to return the data of the provided closure. [#1994](https://github.com/iced-rs/iced/pull/1994)
+- Use `Radians` for angle fields in `Arc` and `arc::Elliptical`. [#2027](https://github.com/iced-rs/iced/pull/2027)
+- Assert dimensions of quads are normal in `iced_tiny_skia`. [#2082](https://github.com/iced-rs/iced/pull/2082)
+- Remove `position` from `overlay::Element`. [#2226](https://github.com/iced-rs/iced/pull/2226)
+- Add a capacity limit to the `GlyphCache` in `iced_tiny_skia`. [#2210](https://github.com/iced-rs/iced/pull/2210)
+- Use pointer equality to speed up `PartialEq` implementation of `image::Bytes`. [#2220](https://github.com/iced-rs/iced/pull/2220)
+- Update `bitflags`, `glam`, `kurbo`, `ouroboros`, `qrcode`, and `sysinfo` dependencies. [#2227](https://github.com/iced-rs/iced/pull/2227)
+- Improve some widget ergonomics. [#2253](https://github.com/iced-rs/iced/pull/2253)
 
 ### Fixed
 - Clipping of `TextInput` selection. [#2199](https://github.com/iced-rs/iced/pull/2199)
@@ -52,6 +327,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PaneGrid` click interaction on the top edge. [#2168](https://github.com/iced-rs/iced/pull/2168)
 - `iced_wgpu` not rendering text in SVGs. [#2161](https://github.com/iced-rs/iced/pull/2161)
 - Text clipping. [#2154](https://github.com/iced-rs/iced/pull/2154)
+- Text transparency in `iced_tiny_skia`. [#2250](https://github.com/iced-rs/iced/pull/2250)
 - Layout invalidation when `Tooltip` changes `overlay`. [#2143](https://github.com/iced-rs/iced/pull/2143)
 - `Overlay` composition. [#2142](https://github.com/iced-rs/iced/pull/2142)
 - Incorrect GIF for the `progress_bar` example. [#2141](https://github.com/iced-rs/iced/pull/2141)
@@ -74,19 +350,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clippy docs keyword quoting. [#2091](https://github.com/iced-rs/iced/pull/2091)
 - Clippy map transformations. [#2090](https://github.com/iced-rs/iced/pull/2090)
 - Inline format args for ease of reading. [#2089](https://github.com/iced-rs/iced/pull/2089)
+- Stuck scrolling in `Scrollable` with touch events. [#1940](https://github.com/iced-rs/iced/pull/1940)
+- Incorrect unit in `system::Information`. [#2223](https://github.com/iced-rs/iced/pull/2223)
+- `size_hint` not being called from `element::Map`. [#2224](https://github.com/iced-rs/iced/pull/2224)
+- `size_hint` not being called from `element::Explain`. [#2225](https://github.com/iced-rs/iced/pull/2225)
+- Slow touch scrolling for `TextEditor` widget. [#2140](https://github.com/iced-rs/iced/pull/2140)
+- `Subscription::map` using unreliable function pointer hash to identify mappers. [#2237](https://github.com/iced-rs/iced/pull/2237)
+- Missing feature flag docs for `time::every`. [#2188](https://github.com/iced-rs/iced/pull/2188)
+- Event loop not being resumed on Windows while resizing. [#2214](https://github.com/iced-rs/iced/pull/2214)
+- Alpha mode misconfiguration in `iced_wgpu`. [#2231](https://github.com/iced-rs/iced/pull/2231)
+- Outdated documentation leading to a dead link. [#2232](https://github.com/iced-rs/iced/pull/2232)
+
 
 Many thanks to...
 
 - @akshayr-mecha
 - @alec-deason
 - @arslee07
+- @AustinMReppert
+- @avsaase
+- @blazra
+- @brianch
 - @bungoboingo
 - @Calastrophe
 - @casperstorm
 - @cfrenette
+- @clarkmoody
 - @Davidster
+- @Decodetalkers
 - @derezzedex
+- @DoomDuck
 - @dtzxporter
+- @Dworv
+- @fogarecious
 - @GyulyVGC
 - @hicaru
 - @ids1024
@@ -95,16 +391,27 @@ Many thanks to...
 - @jhff
 - @jim-ec
 - @joshuamegnauth54
+- @jpttrssn
+- @julianbraha
+- @Koranir
 - @lufte
 - @matze
+- @MichalLebeda
+- @MoSal
 - @MrAntix
 - @nicksenger
 - @Nisatru
 - @nyurik
 - @Remmirad
 - @ripytide
+- @snaggen
+- @Tahinli
+- @tarkah
 - @tzemanovic
+- @varbhat
+- @VAWVAW
 - @william-shere
+- @wyatt-herkamp
 
 ## [0.10.0] - 2023-07-28
 ### Added
@@ -681,7 +988,11 @@ Many thanks to...
 ### Added
 - First release! :tada:
 
-[Unreleased]: https://github.com/iced-rs/iced/compare/0.10.0...HEAD
+[Unreleased]: https://github.com/iced-rs/iced/compare/0.13.1...HEAD
+[0.13.1]: https://github.com/iced-rs/iced/compare/0.13.0...0.13.1
+[0.13.0]: https://github.com/iced-rs/iced/compare/0.12.1...0.13.0
+[0.12.1]: https://github.com/iced-rs/iced/compare/0.12.0...0.12.1
+[0.12.0]: https://github.com/iced-rs/iced/compare/0.10.0...0.12.0
 [0.10.0]: https://github.com/iced-rs/iced/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/iced-rs/iced/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/iced-rs/iced/compare/0.7.0...0.8.0

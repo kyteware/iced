@@ -1,23 +1,62 @@
-//! Decorate content and apply alignment.
+//! Containers let you align a widget inside their boundaries.
+//!
+//! # Example
+//! ```no_run
+//! # mod iced { pub mod widget { pub use iced_widget::*; } }
+//! # pub type State = ();
+//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! use iced::widget::container;
+//!
+//! enum Message {
+//!     // ...
+//! }
+//!
+//! fn view(state: &State) -> Element<'_, Message> {
+//!     container("This text is centered inside a rounded box!")
+//!         .padding(10)
+//!         .center(800)
+//!         .style(container::rounded_box)
+//!         .into()
+//! }
+//! ```
 use crate::core::alignment::{self, Alignment};
-use crate::core::event::{self, Event};
+use crate::core::border::{self, Border};
+use crate::core::gradient::{self, Gradient};
 use crate::core::layout;
 use crate::core::mouse;
 use crate::core::overlay;
 use crate::core::renderer;
+use crate::core::theme;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::widget::{self, Operation};
 use crate::core::{
-    Background, Clipboard, Color, Element, Layout, Length, Padding, Pixels,
-    Point, Rectangle, Shell, Size, Vector, Widget,
+    self, Background, Clipboard, Color, Element, Event, Layout, Length,
+    Padding, Pixels, Point, Rectangle, Shadow, Shell, Size, Theme, Vector,
+    Widget, color,
 };
-use crate::runtime::Command;
+use crate::runtime::task::{self, Task};
 
-pub use iced_style::container::{Appearance, StyleSheet};
-
-/// An element decorating some content.
+/// A widget that aligns its contents inside of its boundaries.
 ///
-/// It is normally used for alignment purposes.
+/// # Example
+/// ```no_run
+/// # mod iced { pub mod widget { pub use iced_widget::*; } }
+/// # pub type State = ();
+/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// use iced::widget::container;
+///
+/// enum Message {
+///     // ...
+/// }
+///
+/// fn view(state: &State) -> Element<'_, Message> {
+///     container("This text is centered inside a rounded box!")
+///         .padding(10)
+///         .center(800)
+///         .style(container::rounded_box)
+///         .into()
+/// }
+/// ```
 #[allow(missing_debug_implementations)]
 pub struct Container<
     'a,
@@ -25,8 +64,8 @@ pub struct Container<
     Theme = crate::Theme,
     Renderer = crate::Renderer,
 > where
-    Theme: StyleSheet,
-    Renderer: crate::core::Renderer,
+    Theme: Catalog,
+    Renderer: core::Renderer,
 {
     id: Option<Id>,
     padding: Padding,
@@ -36,20 +75,20 @@ pub struct Container<
     max_height: f32,
     horizontal_alignment: alignment::Horizontal,
     vertical_alignment: alignment::Vertical,
-    style: Theme::Style,
+    clip: bool,
     content: Element<'a, Message, Theme, Renderer>,
+    class: Theme::Class<'a>,
 }
 
 impl<'a, Message, Theme, Renderer> Container<'a, Message, Theme, Renderer>
 where
-    Theme: StyleSheet,
-    Renderer: crate::core::Renderer,
+    Theme: Catalog,
+    Renderer: core::Renderer,
 {
-    /// Creates an empty [`Container`].
-    pub fn new<T>(content: T) -> Self
-    where
-        T: Into<Element<'a, Message, Theme, Renderer>>,
-    {
+    /// Creates a [`Container`] with the given content.
+    pub fn new(
+        content: impl Into<Element<'a, Message, Theme, Renderer>>,
+    ) -> Self {
         let content = content.into();
         let size = content.as_widget().size_hint();
 
@@ -62,14 +101,15 @@ where
             max_height: f32::INFINITY,
             horizontal_alignment: alignment::Horizontal::Left,
             vertical_alignment: alignment::Vertical::Top,
-            style: Default::default(),
+            clip: false,
+            class: Theme::default(),
             content,
         }
     }
 
     /// Sets the [`Id`] of the [`Container`].
-    pub fn id(mut self, id: Id) -> Self {
-        self.id = Some(id);
+    pub fn id(mut self, id: impl Into<Id>) -> Self {
+        self.id = Some(id.into());
         self
     }
 
@@ -103,42 +143,97 @@ where
         self
     }
 
+    /// Sets the width of the [`Container`] and centers its contents horizontally.
+    pub fn center_x(self, width: impl Into<Length>) -> Self {
+        self.width(width).align_x(alignment::Horizontal::Center)
+    }
+
+    /// Sets the height of the [`Container`] and centers its contents vertically.
+    pub fn center_y(self, height: impl Into<Length>) -> Self {
+        self.height(height).align_y(alignment::Vertical::Center)
+    }
+
+    /// Centers the contents in both the horizontal and vertical axes of the
+    /// [`Container`].
+    ///
+    /// This is equivalent to chaining [`center_x`] and [`center_y`].
+    ///
+    /// [`center_x`]: Self::center_x
+    /// [`center_y`]: Self::center_y
+    pub fn center(self, length: impl Into<Length>) -> Self {
+        let length = length.into();
+
+        self.center_x(length).center_y(length)
+    }
+
+    /// Aligns the contents of the [`Container`] to the left.
+    pub fn align_left(self, width: impl Into<Length>) -> Self {
+        self.width(width).align_x(alignment::Horizontal::Left)
+    }
+
+    /// Aligns the contents of the [`Container`] to the right.
+    pub fn align_right(self, width: impl Into<Length>) -> Self {
+        self.width(width).align_x(alignment::Horizontal::Right)
+    }
+
+    /// Aligns the contents of the [`Container`] to the top.
+    pub fn align_top(self, height: impl Into<Length>) -> Self {
+        self.height(height).align_y(alignment::Vertical::Top)
+    }
+
+    /// Aligns the contents of the [`Container`] to the bottom.
+    pub fn align_bottom(self, height: impl Into<Length>) -> Self {
+        self.height(height).align_y(alignment::Vertical::Bottom)
+    }
+
     /// Sets the content alignment for the horizontal axis of the [`Container`].
-    pub fn align_x(mut self, alignment: alignment::Horizontal) -> Self {
-        self.horizontal_alignment = alignment;
+    pub fn align_x(
+        mut self,
+        alignment: impl Into<alignment::Horizontal>,
+    ) -> Self {
+        self.horizontal_alignment = alignment.into();
         self
     }
 
     /// Sets the content alignment for the vertical axis of the [`Container`].
-    pub fn align_y(mut self, alignment: alignment::Vertical) -> Self {
-        self.vertical_alignment = alignment;
+    pub fn align_y(
+        mut self,
+        alignment: impl Into<alignment::Vertical>,
+    ) -> Self {
+        self.vertical_alignment = alignment.into();
         self
     }
 
-    /// Centers the contents in the horizontal axis of the [`Container`].
-    pub fn center_x(mut self) -> Self {
-        self.horizontal_alignment = alignment::Horizontal::Center;
-        self
-    }
-
-    /// Centers the contents in the vertical axis of the [`Container`].
-    pub fn center_y(mut self) -> Self {
-        self.vertical_alignment = alignment::Vertical::Center;
+    /// Sets whether the contents of the [`Container`] should be clipped on
+    /// overflow.
+    pub fn clip(mut self, clip: bool) -> Self {
+        self.clip = clip;
         self
     }
 
     /// Sets the style of the [`Container`].
-    pub fn style(mut self, style: impl Into<Theme::Style>) -> Self {
-        self.style = style.into();
+    #[must_use]
+    pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
+    where
+        Theme::Class<'a>: From<StyleFn<'a, Theme>>,
+    {
+        self.class = (Box::new(style) as StyleFn<'a, Theme>).into();
+        self
+    }
+
+    /// Sets the style class of the [`Container`].
+    #[must_use]
+    pub fn class(mut self, class: impl Into<Theme::Class<'a>>) -> Self {
+        self.class = class.into();
         self
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Container<'a, Message, Theme, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Container<'_, Message, Theme, Renderer>
 where
-    Theme: StyleSheet,
-    Renderer: crate::core::Renderer,
+    Theme: Catalog,
+    Renderer: core::Renderer,
 {
     fn tag(&self) -> tree::Tag {
         self.content.as_widget().tag()
@@ -187,7 +282,7 @@ where
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn Operation<Message>,
+        operation: &mut dyn Operation,
     ) {
         operation.container(
             self.id.as_ref().map(|id| &id.0),
@@ -203,18 +298,18 @@ where
         );
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
-        self.content.as_widget_mut().on_event(
+    ) {
+        self.content.as_widget_mut().update(
             tree,
             event,
             layout.children().next().unwrap(),
@@ -223,7 +318,7 @@ where
             clipboard,
             shell,
             viewport,
-        )
+        );
     }
 
     fn mouse_interaction(
@@ -253,10 +348,11 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let style = theme.appearance(&self.style);
+        let bounds = layout.bounds();
+        let style = theme.style(&self.class);
 
-        if let Some(viewport) = layout.bounds().intersection(viewport) {
-            draw_background(renderer, &style, layout.bounds());
+        if let Some(clipped_viewport) = bounds.intersection(viewport) {
+            draw_background(renderer, &style, bounds);
 
             self.content.as_widget().draw(
                 tree,
@@ -269,7 +365,11 @@ where
                 },
                 layout.children().next().unwrap(),
                 cursor,
-                &viewport,
+                if self.clip {
+                    &clipped_viewport
+                } else {
+                    viewport
+                },
             );
         }
     }
@@ -277,13 +377,17 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
         self.content.as_widget_mut().overlay(
             tree,
             layout.children().next().unwrap(),
             renderer,
+            viewport,
+            translation,
         )
     }
 }
@@ -292,8 +396,8 @@ impl<'a, Message, Theme, Renderer> From<Container<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
-    Theme: 'a + StyleSheet,
-    Renderer: 'a + crate::core::Renderer,
+    Theme: Catalog + 'a,
+    Renderer: core::Renderer + 'a,
 {
     fn from(
         column: Container<'a, Message, Theme, Renderer>,
@@ -330,25 +434,25 @@ pub fn layout(
     )
 }
 
-/// Draws the background of a [`Container`] given its [`Appearance`] and its `bounds`.
+/// Draws the background of a [`Container`] given its [`Style`] and its `bounds`.
 pub fn draw_background<Renderer>(
     renderer: &mut Renderer,
-    appearance: &Appearance,
+    style: &Style,
     bounds: Rectangle,
 ) where
-    Renderer: crate::core::Renderer,
+    Renderer: core::Renderer,
 {
-    if appearance.background.is_some()
-        || appearance.border.width > 0.0
-        || appearance.shadow.color.a > 0.0
+    if style.background.is_some()
+        || style.border.width > 0.0
+        || style.shadow.color.a > 0.0
     {
         renderer.fill_quad(
             renderer::Quad {
                 bounds,
-                border: appearance.border,
-                shadow: appearance.shadow,
+                border: style.border,
+                shadow: style.shadow,
             },
-            appearance
+            style
                 .background
                 .unwrap_or(Background::Color(Color::TRANSPARENT)),
         );
@@ -379,9 +483,17 @@ impl From<Id> for widget::Id {
     }
 }
 
-/// Produces a [`Command`] that queries the visible screen bounds of the
+impl From<&'static str> for Id {
+    fn from(value: &'static str) -> Self {
+        Id::new(value)
+    }
+}
+
+/// Produces a [`Task`] that queries the visible screen bounds of the
 /// [`Container`] with the given [`Id`].
-pub fn visible_bounds(id: Id) -> Command<Option<Rectangle>> {
+pub fn visible_bounds(id: impl Into<Id>) -> Task<Option<Rectangle>> {
+    let id = id.into();
+
     struct VisibleBounds {
         target: widget::Id,
         depth: usize,
@@ -392,10 +504,11 @@ pub fn visible_bounds(id: Id) -> Command<Option<Rectangle>> {
     impl Operation<Option<Rectangle>> for VisibleBounds {
         fn scrollable(
             &mut self,
-            _state: &mut dyn widget::operation::Scrollable,
             _id: Option<&widget::Id>,
             bounds: Rectangle,
+            _content_bounds: Rectangle,
             translation: Vector,
+            _state: &mut dyn widget::operation::Scrollable,
         ) {
             match self.scrollables.last() {
                 Some((last_translation, last_viewport, _depth)) => {
@@ -460,10 +573,189 @@ pub fn visible_bounds(id: Id) -> Command<Option<Rectangle>> {
         }
     }
 
-    Command::widget(VisibleBounds {
+    task::widget(VisibleBounds {
         target: id.into(),
         depth: 0,
         scrollables: Vec::new(),
         bounds: None,
     })
+}
+
+/// The appearance of a container.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Style {
+    /// The text [`Color`] of the container.
+    pub text_color: Option<Color>,
+    /// The [`Background`] of the container.
+    pub background: Option<Background>,
+    /// The [`Border`] of the container.
+    pub border: Border,
+    /// The [`Shadow`] of the container.
+    pub shadow: Shadow,
+}
+
+impl Style {
+    /// Updates the text color of the [`Style`].
+    pub fn color(self, color: impl Into<Color>) -> Self {
+        Self {
+            text_color: Some(color.into()),
+            ..self
+        }
+    }
+
+    /// Updates the border of the [`Style`].
+    pub fn border(self, border: impl Into<Border>) -> Self {
+        Self {
+            border: border.into(),
+            ..self
+        }
+    }
+
+    /// Updates the background of the [`Style`].
+    pub fn background(self, background: impl Into<Background>) -> Self {
+        Self {
+            background: Some(background.into()),
+            ..self
+        }
+    }
+
+    /// Updates the shadow of the [`Style`].
+    pub fn shadow(self, shadow: impl Into<Shadow>) -> Self {
+        Self {
+            shadow: shadow.into(),
+            ..self
+        }
+    }
+}
+
+impl From<Color> for Style {
+    fn from(color: Color) -> Self {
+        Self::default().background(color)
+    }
+}
+
+impl From<Gradient> for Style {
+    fn from(gradient: Gradient) -> Self {
+        Self::default().background(gradient)
+    }
+}
+
+impl From<gradient::Linear> for Style {
+    fn from(gradient: gradient::Linear) -> Self {
+        Self::default().background(gradient)
+    }
+}
+
+/// The theme catalog of a [`Container`].
+pub trait Catalog {
+    /// The item class of the [`Catalog`].
+    type Class<'a>;
+
+    /// The default class produced by the [`Catalog`].
+    fn default<'a>() -> Self::Class<'a>;
+
+    /// The [`Style`] of a class with the given status.
+    fn style(&self, class: &Self::Class<'_>) -> Style;
+}
+
+/// A styling function for a [`Container`].
+pub type StyleFn<'a, Theme> = Box<dyn Fn(&Theme) -> Style + 'a>;
+
+impl<Theme> From<Style> for StyleFn<'_, Theme> {
+    fn from(style: Style) -> Self {
+        Box::new(move |_theme| style)
+    }
+}
+
+impl Catalog for Theme {
+    type Class<'a> = StyleFn<'a, Self>;
+
+    fn default<'a>() -> Self::Class<'a> {
+        Box::new(transparent)
+    }
+
+    fn style(&self, class: &Self::Class<'_>) -> Style {
+        class(self)
+    }
+}
+
+/// A transparent [`Container`].
+pub fn transparent<Theme>(_theme: &Theme) -> Style {
+    Style::default()
+}
+
+/// A [`Container`] with the given [`Background`].
+pub fn background(background: impl Into<Background>) -> Style {
+    Style::default().background(background)
+}
+
+/// A rounded [`Container`] with a background.
+pub fn rounded_box(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    Style {
+        background: Some(palette.background.weak.color.into()),
+        border: border::rounded(2),
+        ..Style::default()
+    }
+}
+
+/// A bordered [`Container`] with a background.
+pub fn bordered_box(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    Style {
+        background: Some(palette.background.weakest.color.into()),
+        border: Border {
+            width: 1.0,
+            radius: 5.0.into(),
+            color: palette.background.strong.color,
+        },
+        ..Style::default()
+    }
+}
+
+/// A [`Container`] with a dark background and white text.
+pub fn dark(_theme: &Theme) -> Style {
+    style(theme::palette::Pair {
+        color: color!(0x111111),
+        text: Color::WHITE,
+    })
+}
+
+/// A [`Container`] with a primary background color.
+pub fn primary(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    style(palette.primary.base)
+}
+
+/// A [`Container`] with a secondary background color.
+pub fn secondary(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    style(palette.secondary.base)
+}
+
+/// A [`Container`] with a success background color.
+pub fn success(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    style(palette.success.base)
+}
+
+/// A [`Container`] with a danger background color.
+pub fn danger(theme: &Theme) -> Style {
+    let palette = theme.extended_palette();
+
+    style(palette.danger.base)
+}
+
+fn style(pair: theme::palette::Pair) -> Style {
+    Style {
+        background: Some(pair.color.into()),
+        text_color: Some(pair.text),
+        border: border::rounded(2),
+        ..Style::default()
+    }
 }

@@ -1,8 +1,10 @@
 //! Draw paragraphs.
 use crate::core;
 use crate::core::alignment;
-use crate::core::text::{Hit, LineHeight, Shaping, Text};
-use crate::core::{Font, Pixels, Point, Size};
+use crate::core::text::{
+    Alignment, Hit, LineHeight, Shaping, Span, Text, Wrapping,
+};
+use crate::core::{Font, Pixels, Point, Rectangle, Size};
 use crate::text;
 
 use std::fmt;
@@ -10,15 +12,16 @@ use std::sync::{self, Arc};
 
 /// A bunch of text.
 #[derive(Clone, PartialEq)]
-pub struct Paragraph(Option<Arc<Internal>>);
+pub struct Paragraph(Arc<Internal>);
 
+#[derive(Clone)]
 struct Internal {
     buffer: cosmic_text::Buffer,
-    content: String, // TODO: Reuse from `buffer` (?)
     font: Font,
     shaping: Shaping,
-    horizontal_alignment: alignment::Horizontal,
-    vertical_alignment: alignment::Vertical,
+    wrapping: Wrapping,
+    align_x: Alignment,
+    align_y: alignment::Vertical,
     bounds: Size,
     min_bounds: Size,
     version: text::Version,
@@ -46,23 +49,21 @@ impl Paragraph {
         Weak {
             raw: Arc::downgrade(paragraph),
             min_bounds: paragraph.min_bounds,
-            horizontal_alignment: paragraph.horizontal_alignment,
-            vertical_alignment: paragraph.vertical_alignment,
+            align_x: paragraph.align_x,
+            align_y: paragraph.align_y,
         }
     }
 
     fn internal(&self) -> &Arc<Internal> {
-        self.0
-            .as_ref()
-            .expect("paragraph should always be initialized")
+        &self.0
     }
 }
 
 impl core::text::Paragraph for Paragraph {
     type Font = Font;
 
-    fn with_text(text: Text<'_, Font>) -> Self {
-        log::trace!("Allocating paragraph: {}", text.content);
+    fn with_text(text: Text<&str>) -> Self {
+        log::trace!("Allocating plain paragraph: {}", text.content);
 
         let mut font_system =
             text::font_system().write().expect("Write font system");
@@ -77,88 +78,141 @@ impl core::text::Paragraph for Paragraph {
 
         buffer.set_size(
             font_system.raw(),
-            text.bounds.width,
-            text.bounds.height,
+            Some(text.bounds.width),
+            Some(text.bounds.height),
         );
+
+        buffer.set_wrap(font_system.raw(), text::to_wrap(text.wrapping));
 
         buffer.set_text(
             font_system.raw(),
             text.content,
-            text::to_attributes(text.font),
+            &text::to_attributes(text.font),
             text::to_shaping(text.shaping),
         );
 
-        let min_bounds = text::measure(&buffer);
+        let min_bounds =
+            text::align(&mut buffer, font_system.raw(), text.align_x);
 
-        Self(Some(Arc::new(Internal {
+        Self(Arc::new(Internal {
             buffer,
-            content: text.content.to_owned(),
             font: text.font,
-            horizontal_alignment: text.horizontal_alignment,
-            vertical_alignment: text.vertical_alignment,
+            align_x: text.align_x,
+            align_y: text.align_y,
             shaping: text.shaping,
+            wrapping: text.wrapping,
             bounds: text.bounds,
             min_bounds,
             version: font_system.version(),
-        })))
+        }))
+    }
+
+    fn with_spans<Link>(text: Text<&[Span<'_, Link>]>) -> Self {
+        log::trace!("Allocating rich paragraph: {} spans", text.content.len());
+
+        let mut font_system =
+            text::font_system().write().expect("Write font system");
+
+        let mut buffer = cosmic_text::Buffer::new(
+            font_system.raw(),
+            cosmic_text::Metrics::new(
+                text.size.into(),
+                text.line_height.to_absolute(text.size).into(),
+            ),
+        );
+
+        buffer.set_size(
+            font_system.raw(),
+            Some(text.bounds.width),
+            Some(text.bounds.height),
+        );
+
+        buffer.set_wrap(font_system.raw(), text::to_wrap(text.wrapping));
+
+        buffer.set_rich_text(
+            font_system.raw(),
+            text.content.iter().enumerate().map(|(i, span)| {
+                let attrs = text::to_attributes(span.font.unwrap_or(text.font));
+
+                let attrs = match (span.size, span.line_height) {
+                    (None, None) => attrs,
+                    _ => {
+                        let size = span.size.unwrap_or(text.size);
+
+                        attrs.metrics(cosmic_text::Metrics::new(
+                            size.into(),
+                            span.line_height
+                                .unwrap_or(text.line_height)
+                                .to_absolute(size)
+                                .into(),
+                        ))
+                    }
+                };
+
+                let attrs = if let Some(color) = span.color {
+                    attrs.color(text::to_color(color))
+                } else {
+                    attrs
+                };
+
+                (span.text.as_ref(), attrs.metadata(i))
+            }),
+            &text::to_attributes(text.font),
+            text::to_shaping(text.shaping),
+            None,
+        );
+
+        let min_bounds =
+            text::align(&mut buffer, font_system.raw(), text.align_x);
+
+        Self(Arc::new(Internal {
+            buffer,
+            font: text.font,
+            align_x: text.align_x,
+            align_y: text.align_y,
+            shaping: text.shaping,
+            wrapping: text.wrapping,
+            bounds: text.bounds,
+            min_bounds,
+            version: font_system.version(),
+        }))
     }
 
     fn resize(&mut self, new_bounds: Size) {
-        let paragraph = self
-            .0
-            .take()
-            .expect("paragraph should always be initialized");
+        let paragraph = Arc::make_mut(&mut self.0);
 
-        match Arc::try_unwrap(paragraph) {
-            Ok(mut internal) => {
-                let mut font_system =
-                    text::font_system().write().expect("Write font system");
+        let mut font_system =
+            text::font_system().write().expect("Write font system");
 
-                internal.buffer.set_size(
-                    font_system.raw(),
-                    new_bounds.width,
-                    new_bounds.height,
-                );
+        paragraph.buffer.set_size(
+            font_system.raw(),
+            Some(new_bounds.width),
+            Some(new_bounds.height),
+        );
 
-                internal.bounds = new_bounds;
-                internal.min_bounds = text::measure(&internal.buffer);
+        let min_bounds = text::align(
+            &mut paragraph.buffer,
+            font_system.raw(),
+            paragraph.align_x,
+        );
 
-                self.0 = Some(Arc::new(internal));
-            }
-            Err(internal) => {
-                let metrics = internal.buffer.metrics();
-
-                // If there is a strong reference somewhere, we recompute the
-                // buffer from scratch
-                *self = Self::with_text(Text {
-                    content: &internal.content,
-                    bounds: internal.bounds,
-                    size: Pixels(metrics.font_size),
-                    line_height: LineHeight::Absolute(Pixels(
-                        metrics.line_height,
-                    )),
-                    font: internal.font,
-                    horizontal_alignment: internal.horizontal_alignment,
-                    vertical_alignment: internal.vertical_alignment,
-                    shaping: internal.shaping,
-                });
-            }
-        }
+        paragraph.bounds = new_bounds;
+        paragraph.min_bounds = min_bounds;
     }
 
-    fn compare(&self, text: Text<'_, Font>) -> core::text::Difference {
+    fn compare(&self, text: Text<()>) -> core::text::Difference {
         let font_system = text::font_system().read().expect("Read font system");
         let paragraph = self.internal();
         let metrics = paragraph.buffer.metrics();
 
         if paragraph.version != font_system.version
-            || paragraph.content != text.content
             || metrics.font_size != text.size.0
             || metrics.line_height != text.line_height.to_absolute(text.size).0
             || paragraph.font != text.font
             || paragraph.shaping != text.shaping
-            || paragraph.horizontal_alignment != text.horizontal_alignment
-            || paragraph.vertical_alignment != text.vertical_alignment
+            || paragraph.wrapping != text.wrapping
+            || paragraph.align_x != text.align_x
+            || paragraph.align_y != text.align_y
         {
             core::text::Difference::Shape
         } else if paragraph.bounds != text.bounds {
@@ -168,12 +222,36 @@ impl core::text::Paragraph for Paragraph {
         }
     }
 
-    fn horizontal_alignment(&self) -> alignment::Horizontal {
-        self.internal().horizontal_alignment
+    fn size(&self) -> Pixels {
+        Pixels(self.0.buffer.metrics().font_size)
     }
 
-    fn vertical_alignment(&self) -> alignment::Vertical {
-        self.internal().vertical_alignment
+    fn font(&self) -> Font {
+        self.0.font
+    }
+
+    fn line_height(&self) -> LineHeight {
+        LineHeight::Absolute(Pixels(self.0.buffer.metrics().line_height))
+    }
+
+    fn align_x(&self) -> Alignment {
+        self.internal().align_x
+    }
+
+    fn align_y(&self) -> alignment::Vertical {
+        self.internal().align_y
+    }
+
+    fn wrapping(&self) -> Wrapping {
+        self.0.wrapping
+    }
+
+    fn shaping(&self) -> Shaping {
+        self.0.shaping
+    }
+
+    fn bounds(&self) -> Size {
+        self.0.bounds
     }
 
     fn min_bounds(&self) -> Size {
@@ -184,6 +262,87 @@ impl core::text::Paragraph for Paragraph {
         let cursor = self.internal().buffer.hit(point.x, point.y)?;
 
         Some(Hit::CharOffset(cursor.index))
+    }
+
+    fn hit_span(&self, point: Point) -> Option<usize> {
+        let internal = self.internal();
+
+        let cursor = internal.buffer.hit(point.x, point.y)?;
+        let line = internal.buffer.lines.get(cursor.line)?;
+
+        let mut last_glyph = None;
+        let mut glyphs = line
+            .layout_opt()
+            .as_ref()?
+            .iter()
+            .flat_map(|line| line.glyphs.iter())
+            .peekable();
+
+        while let Some(glyph) = glyphs.peek() {
+            if glyph.start <= cursor.index && cursor.index < glyph.end {
+                break;
+            }
+
+            last_glyph = glyphs.next();
+        }
+
+        let glyph = match cursor.affinity {
+            cosmic_text::Affinity::Before => last_glyph,
+            cosmic_text::Affinity::After => glyphs.next(),
+        }?;
+
+        Some(glyph.metadata)
+    }
+
+    fn span_bounds(&self, index: usize) -> Vec<Rectangle> {
+        let internal = self.internal();
+
+        let mut bounds = Vec::new();
+        let mut current_bounds = None;
+
+        let glyphs = internal
+            .buffer
+            .layout_runs()
+            .flat_map(|run| {
+                let line_top = run.line_top;
+                let line_height = run.line_height;
+
+                run.glyphs
+                    .iter()
+                    .map(move |glyph| (line_top, line_height, glyph))
+            })
+            .skip_while(|(_, _, glyph)| glyph.metadata != index)
+            .take_while(|(_, _, glyph)| glyph.metadata == index);
+
+        for (line_top, line_height, glyph) in glyphs {
+            let y = line_top + glyph.y;
+
+            let new_bounds = || {
+                Rectangle::new(
+                    Point::new(glyph.x, y),
+                    Size::new(
+                        glyph.w,
+                        glyph.line_height_opt.unwrap_or(line_height),
+                    ),
+                )
+            };
+
+            match current_bounds.as_mut() {
+                None => {
+                    current_bounds = Some(new_bounds());
+                }
+                Some(current_bounds) if y != current_bounds.y => {
+                    bounds.push(*current_bounds);
+                    *current_bounds = new_bounds();
+                }
+                Some(current_bounds) => {
+                    current_bounds.width += glyph.w;
+                }
+            }
+        }
+
+        bounds.extend(current_bounds);
+        bounds
     }
 
     fn grapheme_position(&self, line: usize, index: usize) -> Option<Point> {
@@ -231,7 +390,7 @@ impl core::text::Paragraph for Paragraph {
 
 impl Default for Paragraph {
     fn default() -> Self {
-        Self(Some(Arc::new(Internal::default())))
+        Self(Arc::new(Internal::default()))
     }
 }
 
@@ -240,11 +399,10 @@ impl fmt::Debug for Paragraph {
         let paragraph = self.internal();
 
         f.debug_struct("Paragraph")
-            .field("content", &paragraph.content)
             .field("font", &paragraph.font)
             .field("shaping", &paragraph.shaping)
-            .field("horizontal_alignment", &paragraph.horizontal_alignment)
-            .field("vertical_alignment", &paragraph.vertical_alignment)
+            .field("horizontal_alignment", &paragraph.align_x)
+            .field("vertical_alignment", &paragraph.align_y)
             .field("bounds", &paragraph.bounds)
             .field("min_bounds", &paragraph.min_bounds)
             .finish()
@@ -253,11 +411,10 @@ impl fmt::Debug for Paragraph {
 
 impl PartialEq for Internal {
     fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
-            && self.font == other.font
+        self.font == other.font
             && self.shaping == other.shaping
-            && self.horizontal_alignment == other.horizontal_alignment
-            && self.vertical_alignment == other.vertical_alignment
+            && self.align_x == other.align_x
+            && self.align_y == other.align_y
             && self.bounds == other.bounds
             && self.min_bounds == other.min_bounds
             && self.buffer.metrics() == other.buffer.metrics()
@@ -271,11 +428,11 @@ impl Default for Internal {
                 font_size: 1.0,
                 line_height: 1.0,
             }),
-            content: String::new(),
             font: Font::default(),
             shaping: Shaping::default(),
-            horizontal_alignment: alignment::Horizontal::Left,
-            vertical_alignment: alignment::Vertical::Top,
+            wrapping: Wrapping::default(),
+            align_x: Alignment::Default,
+            align_y: alignment::Vertical::Top,
             bounds: Size::ZERO,
             min_bounds: Size::ZERO,
             version: text::Version::default(),
@@ -290,15 +447,15 @@ pub struct Weak {
     /// The minimum bounds of the [`Paragraph`].
     pub min_bounds: Size,
     /// The horizontal alignment of the [`Paragraph`].
-    pub horizontal_alignment: alignment::Horizontal,
+    pub align_x: Alignment,
     /// The vertical alignment of the [`Paragraph`].
-    pub vertical_alignment: alignment::Vertical,
+    pub align_y: alignment::Vertical,
 }
 
 impl Weak {
     /// Tries to update the reference into a [`Paragraph`].
     pub fn upgrade(&self) -> Option<Paragraph> {
-        self.raw.upgrade().map(Some).map(Paragraph)
+        self.raw.upgrade().map(Paragraph)
     }
 }
 

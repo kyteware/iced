@@ -4,26 +4,133 @@ mod solid;
 use gradient::Gradient;
 use solid::Solid;
 
-use crate::core::{Background, Rectangle};
+use crate::core::{Background, Rectangle, Transformation};
+use crate::graphics;
 use crate::graphics::color;
-use crate::graphics::{self, Transformation};
 
 use bytemuck::{Pod, Zeroable};
 
 use std::mem;
 
-#[cfg(feature = "tracing")]
-use tracing::info_span;
-
 const INITIAL_INSTANCES: usize = 2_000;
 
-#[derive(Debug)]
+/// The properties of a quad.
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+#[repr(C)]
+pub struct Quad {
+    /// The position of the [`Quad`].
+    pub position: [f32; 2],
+
+    /// The size of the [`Quad`].
+    pub size: [f32; 2],
+
+    /// The border color of the [`Quad`], in __linear RGB__.
+    pub border_color: color::Packed,
+
+    /// The border radii of the [`Quad`].
+    pub border_radius: [f32; 4],
+
+    /// The border width of the [`Quad`].
+    pub border_width: f32,
+
+    /// The shadow color of the [`Quad`].
+    pub shadow_color: color::Packed,
+
+    /// The shadow offset of the [`Quad`].
+    pub shadow_offset: [f32; 2],
+
+    /// The shadow blur radius of the [`Quad`].
+    pub shadow_blur_radius: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct Pipeline {
     solid: solid::Pipeline,
     gradient: gradient::Pipeline,
     constant_layout: wgpu::BindGroupLayout,
+}
+
+#[derive(Default)]
+pub struct State {
     layers: Vec<Layer>,
     prepare_layer: usize,
+}
+
+impl State {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn prepare(
+        &mut self,
+        pipeline: &Pipeline,
+        device: &wgpu::Device,
+        belt: &mut wgpu::util::StagingBelt,
+        encoder: &mut wgpu::CommandEncoder,
+        quads: &Batch,
+        transformation: Transformation,
+        scale: f32,
+    ) {
+        if self.layers.len() <= self.prepare_layer {
+            self.layers
+                .push(Layer::new(device, &pipeline.constant_layout));
+        }
+
+        let layer = &mut self.layers[self.prepare_layer];
+        layer.prepare(device, encoder, belt, quads, transformation, scale);
+
+        self.prepare_layer += 1;
+    }
+
+    pub fn render<'a>(
+        &'a self,
+        pipeline: &'a Pipeline,
+        layer: usize,
+        bounds: Rectangle<u32>,
+        quads: &Batch,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
+        if let Some(layer) = self.layers.get(layer) {
+            render_pass.set_scissor_rect(
+                bounds.x,
+                bounds.y,
+                bounds.width,
+                bounds.height,
+            );
+
+            let mut solid_offset = 0;
+            let mut gradient_offset = 0;
+
+            for (kind, count) in &quads.order {
+                match kind {
+                    Kind::Solid => {
+                        pipeline.solid.render(
+                            render_pass,
+                            &layer.constants,
+                            &layer.solid,
+                            solid_offset..(solid_offset + count),
+                        );
+
+                        solid_offset += count;
+                    }
+                    Kind::Gradient => {
+                        pipeline.gradient.render(
+                            render_pass,
+                            &layer.constants,
+                            &layer.gradient,
+                            gradient_offset..(gradient_offset + count),
+                        );
+
+                        gradient_offset += count;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn trim(&mut self) {
+        self.prepare_layer = 0;
+    }
 }
 
 impl Pipeline {
@@ -48,82 +155,13 @@ impl Pipeline {
         Self {
             solid: solid::Pipeline::new(device, format, &constant_layout),
             gradient: gradient::Pipeline::new(device, format, &constant_layout),
-            layers: Vec::new(),
-            prepare_layer: 0,
             constant_layout,
         }
-    }
-
-    pub fn prepare(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        quads: &Batch,
-        transformation: Transformation,
-        scale: f32,
-    ) {
-        if self.layers.len() <= self.prepare_layer {
-            self.layers.push(Layer::new(device, &self.constant_layout));
-        }
-
-        let layer = &mut self.layers[self.prepare_layer];
-        layer.prepare(device, queue, quads, transformation, scale);
-
-        self.prepare_layer += 1;
-    }
-
-    pub fn render<'a>(
-        &'a self,
-        layer: usize,
-        bounds: Rectangle<u32>,
-        quads: &Batch,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
-        if let Some(layer) = self.layers.get(layer) {
-            render_pass.set_scissor_rect(
-                bounds.x,
-                bounds.y,
-                bounds.width,
-                bounds.height,
-            );
-
-            let mut solid_offset = 0;
-            let mut gradient_offset = 0;
-
-            for (kind, count) in &quads.order {
-                match kind {
-                    Kind::Solid => {
-                        self.solid.render(
-                            render_pass,
-                            &layer.constants,
-                            &layer.solid,
-                            solid_offset..(solid_offset + count),
-                        );
-
-                        solid_offset += count;
-                    }
-                    Kind::Gradient => {
-                        self.gradient.render(
-                            render_pass,
-                            &layer.constants,
-                            &layer.gradient,
-                            gradient_offset..(gradient_offset + count),
-                        );
-
-                        gradient_offset += count;
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn end_frame(&mut self) {
-        self.prepare_layer = 0;
     }
 }
 
 #[derive(Debug)]
-struct Layer {
+pub struct Layer {
     constants: wgpu::BindGroup,
     constants_buffer: wgpu::Buffer,
     solid: solid::Layer,
@@ -162,54 +200,44 @@ impl Layer {
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
         quads: &Batch,
         transformation: Transformation,
         scale: f32,
     ) {
-        #[cfg(feature = "tracing")]
-        let _ = info_span!("Wgpu::Quad", "PREPARE").entered();
+        self.update(device, encoder, belt, transformation, scale);
 
+        if !quads.solids.is_empty() {
+            self.solid.prepare(device, encoder, belt, &quads.solids);
+        }
+
+        if !quads.gradients.is_empty() {
+            self.gradient
+                .prepare(device, encoder, belt, &quads.gradients);
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        transformation: Transformation,
+        scale: f32,
+    ) {
         let uniforms = Uniforms::new(transformation, scale);
+        let bytes = bytemuck::bytes_of(&uniforms);
 
-        queue.write_buffer(
+        belt.write_buffer(
+            encoder,
             &self.constants_buffer,
             0,
-            bytemuck::bytes_of(&uniforms),
-        );
-
-        self.solid.prepare(device, queue, &quads.solids);
-        self.gradient.prepare(device, queue, &quads.gradients);
+            (bytes.len() as u64).try_into().expect("Sized uniforms"),
+            device,
+        )
+        .copy_from_slice(bytes);
     }
-}
-
-/// The properties of a quad.
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-#[repr(C)]
-pub struct Quad {
-    /// The position of the [`Quad`].
-    pub position: [f32; 2],
-
-    /// The size of the [`Quad`].
-    pub size: [f32; 2],
-
-    /// The border color of the [`Quad`], in __linear RGB__.
-    pub border_color: color::Packed,
-
-    /// The border radii of the [`Quad`].
-    pub border_radius: [f32; 4],
-
-    /// The border width of the [`Quad`].
-    pub border_width: f32,
-
-    /// The shadow color of the [`Quad`].
-    pub shadow_color: [f32; 4],
-
-    /// The shadow offset of the [`Quad`].
-    pub shadow_offset: [f32; 2],
-
-    /// The shadow blur radius of the [`Quad`].
-    pub shadow_blur_radius: f32,
 }
 
 /// A group of [`Quad`]s rendered together.
@@ -221,9 +249,12 @@ pub struct Batch {
     /// The gradient quads of the [`Layer`].
     gradients: Vec<Gradient>,
 
-    /// The quad order of the [`Layer`]; stored as a tuple of the quad type & its count.
-    order: Vec<(Kind, usize)>,
+    /// The quad order of the [`Layer`].
+    order: Order,
 }
+
+/// The quad order of a [`Layer`]; stored as a tuple of the quad type & its count.
+type Order = Vec<(Kind, usize)>;
 
 impl Batch {
     /// Returns true if there are no quads of any type in [`Quads`].
@@ -263,6 +294,12 @@ impl Batch {
                 self.order.push((kind, 1));
             }
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.solids.clear();
+        self.gradients.clear();
+        self.order.clear();
     }
 }
 
@@ -319,7 +356,7 @@ impl Uniforms {
 impl Default for Uniforms {
     fn default() -> Self {
         Self {
-            transform: *Transformation::identity().as_ref(),
+            transform: *Transformation::IDENTITY.as_ref(),
             scale: 1.0,
             _padding: [0.0; 3],
         }

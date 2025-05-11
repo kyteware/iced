@@ -1,6 +1,7 @@
-use crate::geometry::path::{arc, Arc, Path};
+use crate::geometry::path::{Arc, Path, arc};
 
-use iced_core::{Point, Size};
+use crate::core::border;
+use crate::core::{Point, Radians, Size};
 
 use lyon_path::builder::{self, SvgPathBuilder};
 use lyon_path::geom;
@@ -106,9 +107,11 @@ impl Builder {
         let arc = geom::Arc {
             center: math::Point::new(arc.center.x, arc.center.y),
             radii: math::Vector::new(arc.radii.x, arc.radii.y),
-            x_rotation: math::Angle::radians(arc.rotation),
-            start_angle: math::Angle::radians(arc.start_angle),
-            sweep_angle: math::Angle::radians(arc.end_angle - arc.start_angle),
+            x_rotation: math::Angle::radians(arc.rotation.0),
+            start_angle: math::Angle::radians(arc.start_angle.0),
+            sweep_angle: math::Angle::radians(
+                (arc.end_angle - arc.start_angle).0,
+            ),
         };
 
         let _ = self.raw.move_to(arc.sample(0.0));
@@ -158,6 +161,75 @@ impl Builder {
         self.close();
     }
 
+    /// Adds a rounded rectangle to the [`Path`] given its top-left
+    /// corner coordinate its [`Size`] and [`border::Radius`].
+    #[inline]
+    pub fn rounded_rectangle(
+        &mut self,
+        top_left: Point,
+        size: Size,
+        radius: border::Radius,
+    ) {
+        let min_size = (size.height / 2.0).min(size.width / 2.0);
+        let [
+            top_left_corner,
+            top_right_corner,
+            bottom_right_corner,
+            bottom_left_corner,
+        ] = radius.into();
+
+        self.move_to(Point::new(
+            top_left.x + min_size.min(top_left_corner),
+            top_left.y,
+        ));
+        self.line_to(Point::new(
+            top_left.x + size.width - min_size.min(top_right_corner),
+            top_left.y,
+        ));
+        self.arc_to(
+            Point::new(top_left.x + size.width, top_left.y),
+            Point::new(
+                top_left.x + size.width,
+                top_left.y + min_size.min(top_right_corner),
+            ),
+            min_size.min(top_right_corner),
+        );
+        self.line_to(Point::new(
+            top_left.x + size.width,
+            top_left.y + size.height - min_size.min(bottom_right_corner),
+        ));
+        self.arc_to(
+            Point::new(top_left.x + size.width, top_left.y + size.height),
+            Point::new(
+                top_left.x + size.width - min_size.min(bottom_right_corner),
+                top_left.y + size.height,
+            ),
+            min_size.min(bottom_right_corner),
+        );
+        self.line_to(Point::new(
+            top_left.x + min_size.min(bottom_left_corner),
+            top_left.y + size.height,
+        ));
+        self.arc_to(
+            Point::new(top_left.x, top_left.y + size.height),
+            Point::new(
+                top_left.x,
+                top_left.y + size.height - min_size.min(bottom_left_corner),
+            ),
+            min_size.min(bottom_left_corner),
+        );
+        self.line_to(Point::new(
+            top_left.x,
+            top_left.y + min_size.min(top_left_corner),
+        ));
+        self.arc_to(
+            Point::new(top_left.x, top_left.y),
+            Point::new(top_left.x + min_size.min(top_left_corner), top_left.y),
+            min_size.min(top_left_corner),
+        );
+        self.close();
+    }
+
     /// Adds a circle to the [`Path`] given its center coordinate and its
     /// radius.
     #[inline]
@@ -165,8 +237,8 @@ impl Builder {
         self.arc(Arc {
             center,
             radius,
-            start_angle: 0.0,
-            end_angle: 2.0 * std::f32::consts::PI,
+            start_angle: Radians(0.0),
+            end_angle: Radians(2.0 * std::f32::consts::PI),
         });
     }
 

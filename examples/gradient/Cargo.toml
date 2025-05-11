@@ -1,8 +1,11 @@
 [package]
 name = "gradient"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [dependencies]
-iced = { path = "../.." }
+iced.workspace = true
+iced.features = ["debug"]
+
+tracing-subscriber = "0.3"

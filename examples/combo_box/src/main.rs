@@ -1,10 +1,10 @@
 use iced::widget::{
-    column, combo_box, container, scrollable, text, vertical_space,
+    center, column, combo_box, scrollable, text, vertical_space,
 };
-use iced::{Alignment, Element, Length, Sandbox, Settings};
+use iced::{Center, Element, Fill};
 
 pub fn main() -> iced::Result {
-    Example::run(Settings::default())
+    iced::run(Example::update, Example::view)
 }
 
 struct Example {
@@ -20,19 +20,13 @@ enum Message {
     Closed,
 }
 
-impl Sandbox for Example {
-    type Message = Message;
-
+impl Example {
     fn new() -> Self {
         Self {
             languages: combo_box::State::new(Language::ALL.to_vec()),
             selected_language: None,
             text: String::new(),
         }
-    }
-
-    fn title(&self) -> String {
-        String::from("Combo box - Iced")
     }
 
     fn update(&mut self, message: Message) {
@@ -68,18 +62,19 @@ impl Sandbox for Example {
             text(&self.text),
             "What is your language?",
             combo_box,
-            vertical_space(150),
+            vertical_space().height(150),
         ]
-        .width(Length::Fill)
-        .align_items(Alignment::Center)
+        .width(Fill)
+        .align_x(Center)
         .spacing(10);
 
-        container(scrollable(content))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x()
-            .center_y()
-            .into()
+        center(scrollable(content)).into()
+    }
+}
+
+impl Default for Example {
+    fn default() -> Self {
+        Example::new()
     }
 }
 
